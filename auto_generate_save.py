@@ -1,28 +1,44 @@
+from decimal import Decimal
 from typing import List, Union
 
-def sum_numbers(numbers: List[Union[int, float]]) -> float:
-    """Calculates the sum of a list of numbers.
+def sum_numbers(numbers: List[Union[int, float, Decimal]]) -> Union[int, float, Decimal]:
+    """
+    Sums a list of numbers (int, float, or Decimal).
 
     Args:
-        numbers: A list of integers or floats.
+        numbers: A list of numbers.
 
     Returns:
-        The sum of the numbers in the list. Returns 0.0 if the list is empty.
+        The sum of the numbers.  The return type is int if all inputs are int,
+        float if any input is float, and Decimal if any input is Decimal and
+        no inputs are float.
 
     Raises:
-        TypeError: If the list contains non-numeric elements.
+        TypeError: If input is not a list, or if any element in the list
+            is not an int, float, or Decimal.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
-    if not numbers:
-        return 0.0
+    has_float = False
+    has_decimal = False
 
-    total = 0.0
-    for i, number in enumerate(numbers):
-        if isinstance(number, (int, float)):
-            total += number
-        else:
-            raise TypeError(f"Element at index {i} is of type {type(number)}, but must be a number.")
+    for number in numbers:
+        if not isinstance(number, (int, float, Decimal)):
+            raise TypeError(f"Invalid type for list element: {type(number)}")
+        if isinstance(number, float):
+            has_float = True
+        elif isinstance(number, Decimal):
+            has_decimal = True
 
-    return total
+    if has_float:
+        result = float(0)
+    elif has_decimal:
+        result = Decimal(0)
+    else:
+        result = 0
+
+    for number in numbers:
+        result += number
+
+    return result
