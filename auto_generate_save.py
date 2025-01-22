@@ -1,40 +1,22 @@
-from typing import List, Union, Sequence
+from typing import List, Union
 
-def sum_numbers(numbers: Sequence[Union[int, float]]) -> Union[int, float]:
+def sum_numbers(numbers: List[Union[int, float]]) -> float:
     """
     Calculates the sum of a list of numbers.
 
     Args:
-        numbers: A sequence of numbers (int or float).  Accepts lists or tuples.
+        numbers: A list of numbers to sum.
 
     Returns:
-        The sum of the numbers in the sequence.
-        Returns 0 if the input sequence is empty.
-        Raises TypeError if the input is not a sequence or if the sequence contains non-numeric values.
-
+        The sum of the numbers in the input list.
+        Raises TypeError if input is not a list or contains non-numeric values.
     """
-    if not isinstance(numbers, Sequence):
-        raise TypeError("Input must be a sequence (list or tuple).")
+    if not isinstance(numbers, list):
+        raise TypeError("Input must be a list.")
 
-    total: Union[int, float] = 0
+    total: float = 0
     for number in numbers:
         if not isinstance(number, (int, float)):
-            raise TypeError("Sequence elements must be numbers (int or float).")
+            raise TypeError("List elements must be numbers.")
         total += number
-
     return total
-
-
-
-# Example usage
-try:
-    print(sum_numbers([1, 2, 3]))  # Output: 6
-    print(sum_numbers([1.5, 2.5, 3]))  # Output: 7.0
-    print(sum_numbers([]))  # Output: 0
-    print(sum_numbers((1, 2, 3.5))) # Output: 6.5  Example with a tuple
-
-    print(sum_numbers("hello")) # Raises TypeError
-    print(sum_numbers([1, 2, "a"])) # Raises TypeError
-
-except TypeError as e:
-    print(f"Error: {e}")
