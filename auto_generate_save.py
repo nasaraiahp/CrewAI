@@ -1,16 +1,18 @@
 from typing import List, Union
 
-def count_numbers(numbers: List[Union[int, float]]) -> int:
+def sum_numbers(numbers: List[Union[int, float]]) -> Union[int, float]:
     """
-    Counts the number of numeric elements in a list.
+    Calculates the sum of a list of numbers.
 
     Args:
         numbers: A list of numbers (int or float).
 
     Returns:
-        The total count of numbers in the list.
-        Raises TypeError if input is not a list or contains non-numeric elements.
-        Raises ValueError if the input list is empty.
+        The sum of the numbers in the list.
+
+    Raises:
+        TypeError: If the input is not a list or contains non-numeric elements.
+        ValueError: If the input list is empty.
     """
 
     if not isinstance(numbers, list):
@@ -19,8 +21,8 @@ def count_numbers(numbers: List[Union[int, float]]) -> int:
     if not numbers:
         raise ValueError("Input list cannot be empty.")
 
-    # Improved: Check for type within the loop is redundant.  The type hint
-    # ensures that mypy will catch type errors. The runtime check is only
-    # needed in situations where you might be bypassing type checking.  
-    # Simply returning the length is correct and more efficient.
-    return len(numbers)
+    if not all(isinstance(num, (int, float)) for num in numbers):  # More efficient check
+        raise TypeError("List elements must be numbers (int or float).")
+
+    total = sum(numbers)
+    return total
