@@ -1,22 +1,23 @@
-from typing import List, Union, Sequence
+from typing import List, Union
 
-def sum_numbers(numbers: Sequence[Union[int, float]]) -> Union[int, float]:
+def sum_numbers(numbers: List[Union[int, float]]) -> Union[int, float]:
     """
     Calculates the sum of a list of numbers.
 
     Args:
-        numbers: A sequence of numbers (int or float).
+        numbers: A list of numbers (int or float).
 
     Returns:
-        The sum of the numbers in the input sequence.
-        Returns 0 if the input sequence is empty.
-
-    Raises:
-        TypeError: If any element in the sequence is not an int or a float.
+        The sum of the numbers in the list.
+        Returns 0 if the list is empty.
+        Raises TypeError if the input is not a list or contains non-numeric elements.
     """
+    if not isinstance(numbers, list):
+        raise TypeError("Input must be a list.")
+
     total: Union[int, float] = 0
     for number in numbers:
         if not isinstance(number, (int, float)):
-            raise TypeError("Sequence elements must be numbers (int or float).")
+            raise TypeError("List elements must be numbers (int or float).")
         total += number
     return total
