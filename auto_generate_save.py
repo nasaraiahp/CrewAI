@@ -1,52 +1,30 @@
-from typing import List, Union, Sequence
+from typing import List, Union
 
-def calculate_average(numbers: Sequence[Union[int, float]]) -> float:
+def calculate_average(numbers: List[Union[int, float]]) -> float:
     """
-    Calculates the average of a sequence of numbers.
+    Calculates the average of a list of numbers.
 
     Args:
-        numbers: A sequence of numbers (int or float).
+        numbers: A list of numbers (int or float).
 
     Returns:
-        The average of the numbers in the sequence.
-        Raises ValueError if the sequence is empty or contains non-numeric values.
+        The average of the numbers in the list.
 
+    Raises:
+        TypeError: If the input is not a list or contains non-numeric values.
+        ValueError: If the input list is empty.
     """
+    if not isinstance(numbers, list):
+        raise TypeError("Input must be a list.")
+
     if not numbers:
-        raise ValueError("Cannot calculate the average of an empty sequence.")
+        raise ValueError("Input list cannot be empty.")
 
-    # Check all types at once using all() for efficiency
-    if not all(isinstance(num, (int, float)) for num in numbers):
-        raise ValueError("Sequence must contain only numbers (int or float).")
+    # More efficient way to check types and calculate the sum in one loop.  The previous version iterated twice unnecessarily
+    total = 0
+    for num in numbers:
+        if not isinstance(num, (int, float)):
+            raise TypeError("List elements must be numbers (int or float).")
+        total += num  
 
-    return sum(numbers) / len(numbers)
-
-
-
-# Example usage with more concise error handling
-try:
-    my_numbers = [1, 2, 3, 4, 5]
-    average = calculate_average(my_numbers)
-    print(f"The average is: {average}")
-
-    empty_list = []
-    average = calculate_average(empty_list)  # This will raise a ValueError
-
-except (ValueError, TypeError) as e: # Catch both potential errors
-    print(f"Error: {e}")
-
-
-try:
-    my_numbers_with_string = [1, 2, "a", 4, 5]  # Example with a string
-    average = calculate_average(my_numbers_with_string) # This will raise a ValueError
-
-except (ValueError, TypeError) as e: # Catch both potential errors
-    print(f"Error: {e}")
-
-
-try:
-    not_a_list = 123 # Example with a non-sequence type. Now handled correctly
-    average = calculate_average(not_a_list) # This will raise a TypeError (because sum will attempt to iterate which won't work for int)
-
-except (ValueError, TypeError) as e: # Catch both potential errors
-    print(f"Error: {e}")
+    return total / len(numbers)
