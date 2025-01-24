@@ -1,30 +1,28 @@
 from typing import List, Union
 
-def sum_and_average(numbers: List[Union[int, float]]) -> tuple[Union[int, float], float]:
+def calculate_average(numbers: List[Union[int, float]]) -> float:
     """
-    Calculates the sum and average of a list of numbers.
+    Calculates the average of a list of numbers.
 
     Args:
-        numbers: A list of numbers (int or float).
+        numbers: A list of numbers (integers or floats).
 
     Returns:
-        A tuple containing the sum and average of the numbers.
-        Returns (0, 0.0) if the input list is empty.
-        Raises TypeError if the input is not a list or contains non-numeric values.
+        The average of the numbers in the input list.
+        Raises TypeError if input is not a list or if the list contains non-numeric elements.
+        Raises ValueError if the input list is empty.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
     if not numbers:
-        return 0, 0.0  # Handle empty list case
+        raise ValueError("Input list cannot be empty.")
 
-    # More efficient sum calculation using built-in sum()
-    total = sum(numbers)
+    # Improved: Check types and sum in one loop for efficiency
+    total = 0
+    for num in numbers:
+        if not isinstance(num, (int, float)):
+            raise TypeError("List elements must be numbers (int or float).")
+        total += num
 
-    # Check for numeric types after summing for efficiency
-    if not all(isinstance(num, (int, float)) for num in numbers):  #check if all are numbers
-        raise TypeError("List elements must be numbers (int or float).")
-
-
-    average = total / len(numbers)
-    return total, average
+    return total / len(numbers)
