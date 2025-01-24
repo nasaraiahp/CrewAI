@@ -1,40 +1,37 @@
-from typing import List, Union
+from typing import List, Union, Sequence
 
-def sum_numbers(numbers: List[Union[int, float]]) -> Union[int, float]:
+def sum_numbers(numbers: Sequence[Union[int, float]]) -> Union[int, float]:
     """
     Calculates the sum of a list of numbers.
 
     Args:
-        numbers: A list of numbers (int or float).
+        numbers: A sequence of numbers (int or float).
 
     Returns:
-        The sum of the numbers in the input list.
-        Returns 0 if the input list is empty.
-        Raises TypeError if the input is not a list or if the list contains non-numeric elements.
+        The sum of the numbers in the input sequence.
+        Returns 0 if the input sequence is empty.
+        Raises TypeError if the input is not a sequence or contains non-numeric elements.
     """
-    if not isinstance(numbers, list):
-        raise TypeError("Input must be a list.")
+    if not isinstance(numbers, Sequence):
+        raise TypeError("Input must be a sequence.")
 
-    # More efficient sum calculation using the built-in sum() function.
-    # The check for numeric types is done within sum() using a generator expression combined with the all() function. 
-    # The generator checks that each number is an instance of int or float. This avoids manual iteration and TypeError raising within the loop.
-
-    if all(isinstance(number, (int, float)) for number in numbers):
-      return sum(numbers)
-    else:
-      raise TypeError("List elements must be numbers (int or float).")
+    total = 0
+    for num in numbers:
+        if not isinstance(num, (int, float)):
+            raise TypeError("Sequence elements must be numbers (int or float).")
+        total += num
+    return total
 
 
 
-# Example usage demonstrating the improved function:
-
+# Example usage:
 try:
     print(sum_numbers([1, 2, 3, 4, 5]))  # Output: 15
-    print(sum_numbers([1.5, 2.5, 3.0]))  # Output: 7.0
-    print(sum_numbers([]))  # Output: 0
-
-    print(sum_numbers("hello"))  # Raises TypeError
-    print(sum_numbers([1, 2, "a"]))  # Raises TypeError
+    print(sum_numbers([1.5, 2.5, 3.0])) # Output: 7.0
+    print(sum_numbers([])) # Output: 0
+    print(sum_numbers((1, 2, 3)))  # Now works with tuples as well!
+    print(sum_numbers([1, 2, 'a']))  # Raises TypeError
+    print(sum_numbers("123")) # Raises TypeError
 
 except TypeError as e:
     print(f"Error: {e}")
