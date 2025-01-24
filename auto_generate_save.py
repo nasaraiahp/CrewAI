@@ -1,48 +1,59 @@
 from typing import List, Tuple
 
-def analyze_numbers(numbers: List[float]) -> Tuple[float, float, float]:
+def summarize_numbers(numbers: List[float]) -> Tuple[float, float, float]:
     """
-    Analyzes a list of numbers to calculate the sum, maximum, and minimum values.
+    Calculates the sum, maximum, and minimum of a list of numbers.
 
     Args:
-        numbers: A list of numbers (float or int).
+        numbers: A list of numbers.
 
     Returns:
-        A tuple containing the sum, maximum, and minimum values.
-        Raises ValueError if the input list is empty or contains non-numeric values.
-        Raises TypeError if the input is not a list.
+        A tuple containing the sum, maximum, and minimum of the numbers.
+        Returns (0.0, 0.0, 0.0) if the input list is empty.
+
+    Raises:
+        TypeError: If input is not a list or contains non-numeric values.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
     if not numbers:
-        raise ValueError("Input list cannot be empty.")
+        return 0.0, 0.0, 0.0  # Handle empty list case
 
-    try:
-        total = sum(numbers)
-        maximum = max(numbers)
-        minimum = min(numbers)
-    except TypeError as e:
-        raise TypeError("List elements must be numbers.") from e  # Chain the exception
-    except ValueError as e: # this catches empty list from min/max
-        raise ValueError("List elements must be numbers.") from e
+    if not all(isinstance(num, (int, float)) for num in numbers):
+        raise TypeError("List elements must be numbers.")
 
+    # More efficient to calculate min/max once, not via separate function calls.
+    minimum = maximum = numbers[0]
+    total = 0.0 # Initialize total to float for consistency
+
+    for num in numbers:  # Iterate once to calculate sum, min, max
+        total += num
+        if num < minimum:
+            minimum = num
+        elif num > maximum:
+            maximum = num
+            
     return total, maximum, minimum
 
 
-
-# Example usage:
-
+# Example usage
 try:
-    result = analyze_numbers([1, 2, 3, 4, 5])
-    print(f"Sum: {result[0]}, Max: {result[1]}, Min: {result[2]}")
+    my_numbers = [1.5, 2.0, 3.7, 4, 5.2]
+    sum_result, max_result, min_result = summarize_numbers(my_numbers)
+    print(f"Sum: {sum_result}, Max: {max_result}, Min: {min_result}")
 
-    result = analyze_numbers([1.5, 2.5, 3, 4, 5])  # Handles floats as well
-    print(f"Sum: {result[0]}, Max: {result[1]}, Min: {result[2]}")
+    empty_list = []
+    sum_result, max_result, min_result = summarize_numbers(empty_list)
+    print(f"Sum: {sum_result}, Max: {max_result}, Min: {min_result}")
 
-    result = analyze_numbers([]) # Now correctly raises ValueError
-    print(f"Sum: {result[0]}, Max: {result[1]}, Min: {result[2]}") 
+    invalid_list = [1, 2, 'a', 4]
+    sum_result, max_result, min_result = summarize_numbers(invalid_list)
+    print(f"Sum: {sum_result}, Max: {max_result}, Min: {min_result}")
 
-    result = analyze_numbers([1, 2, "a"])  # Demonstrates type error handling
-except (TypeError, ValueError) as e:
+
+except TypeError as e:
     print(f"Error: {e}")
+
+except Exception as e:  # Catching any other potential errors
+    print(f"An unexpected error occurred: {e}")
