@@ -1,30 +1,40 @@
 from typing import List, Union
 
-def calculate_average(numbers: List[Union[int, float]]) -> float:
+def sum_numbers(numbers: List[Union[int, float]]) -> Union[int, float]:
     """
-    Calculates the average of a list of numbers.
+    Calculates the sum of a list of numbers.
 
     Args:
         numbers: A list of numbers (int or float).
 
     Returns:
-        The average of the numbers in the list.
-
-    Raises:
-        TypeError: If the input is not a list or contains non-numeric values.
-        ValueError: If the input list is empty.
+        The sum of the numbers in the input list.
+        Returns 0 if the input list is empty.
+        Raises TypeError if the input is not a list or if the list contains non-numeric elements.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
-    if not numbers:
-        raise ValueError("Input list cannot be empty.")
+    # More efficient sum calculation using the built-in sum() function.
+    # The check for numeric types is done within sum() using a generator expression combined with the all() function. 
+    # The generator checks that each number is an instance of int or float. This avoids manual iteration and TypeError raising within the loop.
 
-    # More efficient way to check types and calculate the sum in one loop.  The previous version iterated twice unnecessarily
-    total = 0
-    for num in numbers:
-        if not isinstance(num, (int, float)):
-            raise TypeError("List elements must be numbers (int or float).")
-        total += num  
+    if all(isinstance(number, (int, float)) for number in numbers):
+      return sum(numbers)
+    else:
+      raise TypeError("List elements must be numbers (int or float).")
 
-    return total / len(numbers)
+
+
+# Example usage demonstrating the improved function:
+
+try:
+    print(sum_numbers([1, 2, 3, 4, 5]))  # Output: 15
+    print(sum_numbers([1.5, 2.5, 3.0]))  # Output: 7.0
+    print(sum_numbers([]))  # Output: 0
+
+    print(sum_numbers("hello"))  # Raises TypeError
+    print(sum_numbers([1, 2, "a"]))  # Raises TypeError
+
+except TypeError as e:
+    print(f"Error: {e}")
