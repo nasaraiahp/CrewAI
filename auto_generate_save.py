@@ -8,17 +8,18 @@ def sum_numbers(numbers: List[Union[int, float]]) -> Union[int, float]:
         numbers: A list of numbers (int or float).
 
     Returns:
-        The sum of the numbers in the input list.
-        Raises TypeError if input is not a list.
-        Raises ValueError if the input list is empty.
-        Raises TypeError if the input list contains non-numeric values (handled by sum()).
+        The sum of the numbers in the list.
+        Returns 0 if the list is empty.
 
-
+    Raises:
+        TypeError: If any element in the list is not an int or float.
     """
-    if not isinstance(numbers, list):
-        raise TypeError("Input must be a list.")
-
     if not numbers:
-        raise ValueError("Input list cannot be empty.")
+        return 0  # Handle empty list case
 
-    return sum(numbers)
+    total = 0
+    for number in numbers:
+        if not isinstance(number, (int, float)):
+            raise TypeError("List elements must be numbers (int or float)")
+        total += number
+    return total
