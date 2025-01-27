@@ -1,54 +1,25 @@
-from typing import List, Tuple, Union
+from typing import List, Union
 
-def calculate_stats(numbers: List[Union[int, float]]) -> Tuple[Union[float, None], Union[float, None], Union[float, None]]:
+def sum_numbers(numbers: List[Union[int, float]]) -> Union[int, float]:
     """
-    Calculates the maximum, minimum, and average of a list of numbers.
+    Calculates the sum of a list of numbers.
 
     Args:
-        numbers: A list of numbers.
+        numbers: A list of numbers (integers or floats).
 
     Returns:
-        A tuple containing the maximum, minimum, and average of the numbers.
-        Returns (None, None, None) if the input list is empty.
+        The sum of the numbers in the list.  The return type will typically
+        match the input type (e.g., all integers will return an integer sum),
+        unless a float is present or overflow occurs, in which case a float
+        will be returned. Returns 0 if the list is empty.
 
     Raises:
-        TypeError: If the input is not a list or contains non-numerical elements.
+        TypeError: If any element in the list is not an int or a float.
     """
-    if not isinstance(numbers, list):
-        raise TypeError("Input must be a list.")
+    if not numbers:
+        return 0  # Return 0 for an empty list
 
-    if not numbers:  # Handle empty list case
-        return None, None, None
-
-    if not all(isinstance(num, (int, float)) for num in numbers):
-        raise TypeError("List elements must be numbers.")
-
-    # More efficient approach using built-in functions for min, max, and sum
-    max_num = max(numbers)
-    min_num = min(numbers)
-    total = sum(numbers)
-    average = total / len(numbers)
-
-    return max_num, min_num, average
-
-
-# Example usage:
-try:
-    my_numbers = [1, 2, 3, 4, 5]
-    maximum, minimum, average = calculate_stats(my_numbers)
-    if maximum is not None: # handles empty list case gracefully
-        print("Maximum:", maximum)
-        print("Minimum:", minimum)
-        print("Average:", average)
-
-    empty_list = []
-    maximum, minimum, average = calculate_stats(empty_list)
-    if maximum is None:
-        print("The list is empty.")
-
-
-    invalid_list = [1, 2, 'a', 4, 5]
-    maximum, minimum, average = calculate_stats(invalid_list)  # This will raise a TypeError
-
-except TypeError as e:
-    print("Error:", e)
+    if not all(isinstance(number, (int, float)) for number in numbers):
+        raise TypeError("List elements must be integers or floats.")
+    
+    return sum(numbers)
