@@ -1,28 +1,30 @@
-from typing import List, Union, Tuple
+from typing import List, Union
 
-def min_max_sum(numbers: List[Union[int, float]]) -> Tuple[Union[float, None], Union[float, None], Union[float, None]]:
+def list_stats(numbers: List[Union[int, float]]) -> tuple[float, float, float]:
     """
-    Calculates the minimum, maximum, and sum of a list of numbers.
+    Calculates the sum, minimum, and maximum of a list of numbers.
 
     Args:
-        numbers: A list of numbers (float or int).
+        numbers: A list of numbers (int or float).
 
     Returns:
-        A tuple containing the minimum, maximum, and sum of the numbers.
-        Returns (None, None, None) if the input is not a list, 
-        contains non-numeric values, or is empty.
+        A tuple containing the sum, minimum, and maximum of the numbers.
+        Raises TypeError if the list contains non-numeric values.
+        Raises ValueError if the input list is empty.
     """
-    if not isinstance(numbers, list):
-        return None, None, None  # Or log the error
+    if not numbers:
+        raise ValueError("Input list cannot be empty.")
 
     if not all(isinstance(num, (int, float)) for num in numbers):
-        return None, None, None # Or log the error
+        raise TypeError("List must contain only numbers (int or float).")
 
-    if not numbers:
-        return None, None, None # Or log the error
-    
-    min_val = min(numbers)
-    max_val = max(numbers)
-    total = sum(numbers)
+    total = 0
+    minimum = float('inf')  # Initialize with positive infinity
+    maximum = float('-inf') # Initialize with negative infinity
 
-    return min_val, max_val, total
+    for num in numbers:
+        total += num
+        minimum = min(minimum, num)
+        maximum = max(maximum, num)
+
+    return total, minimum, maximum
