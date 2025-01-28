@@ -1,30 +1,38 @@
-from typing import List, Union
+from typing import List, Tuple
 
-def analyze_list(numbers: List[Union[int, float]]) -> tuple[float, float, float]:
+def min_max_avg(numbers: List[float]) -> Tuple[float, float, float]:
     """
-    Analyzes a list of numbers to find the maximum, minimum, and sum.
+    Calculates the minimum, maximum, and average of a list of numbers.
 
     Args:
-        numbers: A list of int or float numbers.
+        numbers: A list of numbers.
 
     Returns:
-        A tuple containing the maximum, minimum, and sum of the numbers.
-        Raises TypeError if input is not a list of numbers.
-        Raises ValueError if the input list is empty.
+        A tuple containing the minimum, maximum, and average of the numbers.
+        Returns (None, None, None) if the list is empty.
 
+    Raises:
+        TypeError: If input is not a list or if the list contains non-numeric values.
+        ValueError: If the input list is empty.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
-    if not all(isinstance(num, (int, float)) for num in numbers):
-        raise TypeError("List elements must be int or float.")
-
     if not numbers:
-        raise ValueError("List cannot be empty.")
+        return None, None, None  # Return None for empty list as documented
 
-    # More efficient approach using built-in functions
-    max_num = max(numbers)
-    min_num = min(numbers)
-    total = sum(numbers)
+    if not all(isinstance(num, (int, float)) for num in numbers):
+        raise TypeError("List elements must be numeric.")
 
-    return max_num, min_num, total
+    min_val = numbers[0]  # Initialize with the first element for efficiency
+    max_val = numbers[0]
+    total = 0
+
+    for number in numbers:
+        min_val = min(min_val, number)
+        max_val = max(max_val, number)
+        total += number
+
+    avg = total / len(numbers)
+
+    return min_val, max_val, avg
