@@ -1,53 +1,36 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
-def analyze_numbers(numbers: List[float]) -> Tuple[float, float, float]:
+def analyze_numbers(numbers: List[Union[int, float]]) -> Tuple[float, float, float]:
     """
-    Analyzes a list of numbers to find the maximum, minimum, and sum.
+    Calculates the sum, maximum, and minimum of a list of numbers.
 
     Args:
-        numbers: A list of numbers.
+        numbers: A list of int or float numbers.
 
     Returns:
-        A tuple containing the maximum, minimum, and sum of the numbers.
+        A tuple containing the sum, maximum, and minimum values.
+        Raises TypeError if input is not a list of numbers.
+        Raises ValueError if the input list is empty.
 
-    Raises:
-        ValueError: If the input list is empty or contains non-numeric values.
-        TypeError: If the input is not a list.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
-    if not numbers:
-        raise ValueError("Input list cannot be empty.")
-
     if not all(isinstance(num, (int, float)) for num in numbers):
-        raise ValueError("Input list must contain only numbers.")
+        raise TypeError("List elements must be int or float.")
 
-    # More efficient approach using built-in functions
-    max_num = max(numbers)
-    min_num = min(numbers)
-    total = sum(numbers)
+    if not numbers:
+        raise ValueError("List cannot be empty.")
 
-    return max_num, min_num, total
+    # More efficient to calculate min/max once during iteration
+    total = 0
+    minimum = float('inf')  # Initialize with positive infinity
+    maximum = float('-inf') # Initialize with negative infinity
 
-
-# Example usage:
-
-try:
-    result = analyze_numbers([1.5, 2.7, 3, 4.2, 5])
-    print(f"Maximum: {result[0]}, Minimum: {result[1]}, Sum: {result[2]}")
-
-    result = analyze_numbers([])  # Test empty list
-except ValueError as e:
-    print(f"Error: {e}")
-
-try:
-    result = analyze_numbers([1, 2, 'a'])  # Test invalid input
-except ValueError as e:
-    print(f"Error: {e}")
+    for num in numbers:
+        total += num
+        minimum = min(minimum, num)
+        maximum = max(maximum, num)
 
 
-try:
-    result = analyze_numbers("not a list")
-except TypeError as e:
-    print(f"Error: {e}")
+    return total, maximum, minimum
