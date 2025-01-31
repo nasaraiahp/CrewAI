@@ -1,30 +1,53 @@
 from typing import List, Tuple
 
-def min_max_sum(numbers: List[float]) -> Tuple[float, float, float]:
+def analyze_numbers(numbers: List[float]) -> Tuple[float, float, float]:
     """
-    Calculates the minimum, maximum, and sum of a list of numbers.
+    Analyzes a list of numbers to find the maximum, minimum, and sum.
 
     Args:
         numbers: A list of numbers.
 
     Returns:
-        A tuple containing the minimum, maximum, and sum of the numbers.
-        Returns (0, 0, 0) if the input list is empty.
+        A tuple containing the maximum, minimum, and sum of the numbers.
+
     Raises:
-        TypeError: If input is not a list or if the list elements are not numbers.
+        ValueError: If the input list is empty or contains non-numeric values.
+        TypeError: If the input is not a list.
     """
     if not isinstance(numbers, list):
         raise TypeError("Input must be a list.")
 
-    if not all(isinstance(num, (int, float)) for num in numbers):
-        raise TypeError("List elements must be numbers.")
-
     if not numbers:
-        return 0.0, 0.0, 0.0  # Return float zeros for consistency
+        raise ValueError("Input list cannot be empty.")
+
+    if not all(isinstance(num, (int, float)) for num in numbers):
+        raise ValueError("Input list must contain only numbers.")
 
     # More efficient approach using built-in functions
-    min_num = min(numbers)
     max_num = max(numbers)
-    total_sum = sum(numbers)
+    min_num = min(numbers)
+    total = sum(numbers)
 
-    return min_num, max_num, total_sum
+    return max_num, min_num, total
+
+
+# Example usage:
+
+try:
+    result = analyze_numbers([1.5, 2.7, 3, 4.2, 5])
+    print(f"Maximum: {result[0]}, Minimum: {result[1]}, Sum: {result[2]}")
+
+    result = analyze_numbers([])  # Test empty list
+except ValueError as e:
+    print(f"Error: {e}")
+
+try:
+    result = analyze_numbers([1, 2, 'a'])  # Test invalid input
+except ValueError as e:
+    print(f"Error: {e}")
+
+
+try:
+    result = analyze_numbers("not a list")
+except TypeError as e:
+    print(f"Error: {e}")
