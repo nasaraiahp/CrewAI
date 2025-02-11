@@ -1,26 +1,33 @@
 from flask import Flask, render_template, request
-from typing import List
+from typing import List, Union
 
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "POST"])
-def sum_numbers():
+def average():
     result = None
-    error_message = None  # Initialize error_message
-
     if request.method == "POST":
-        numbers_str = request.form.get("numbers")
-        if not numbers_str:
-            error_message = "Input cannot be empty."
-        else:
+        try:
+            numbers_str = request.form.get("numbers")
+            if not numbers_str:
+                raise ValueError("Input cannot be empty.")
+
+            # More efficient string splitting and number conversion
             try:
-                numbers_list = [float(num_str.strip()) for num_str in numbers_str.split(',')]
-                result = sum(numbers_list)
-            except ValueError as e:
-                error_message = f"Invalid input: {e}" # More informative error message
+                numbers: List[float] = [float(x) for x in numbers_str.split(",") if x.strip()]
+            except ValueError:
+                raise ValueError("Invalid input: Please enter numbers separated by commas.")
 
-    return render_template("index.html", result=result, error=error_message) # Pass error to template
+            if not numbers:
+                raise ValueError("Please provide at least one number.")
 
+            average_val = sum(numbers) / len(numbers)
+            result = f"The average is: {average_val}"
+
+        except ValueError as e:
+            result = f"Error: {e}"
+
+    return render_template("average.html", result=result)
 
 if __name__ == "__main__":
-    app.run(debug=False) # Disable debug in production
+    app.run(debug=False)  # Disable debug mode in production
