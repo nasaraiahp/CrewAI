@@ -1,47 +1,54 @@
-from typing import List
-import math
+from typing import List, Tuple
+from flask import Flask, render_template, request
 
-def analyze_numbers(numbers: List[float]) -> tuple[float, float, float]:
+app = Flask(__name__)
+
+def min_max_sum(numbers: List[float]) -> Tuple[float, float, float]:
     """
-    Calculates the sum, maximum, and minimum of a list of numbers.
+    Calculates the minimum, maximum, and sum of a list of numbers.
 
     Args:
         numbers: A list of numbers.
 
     Returns:
-        A tuple containing the sum, maximum, and minimum values.
-        Raises ValueError if the input list is empty or contains non-numerical elements.
+        A tuple containing the minimum, maximum, and sum of the numbers.
+        Returns (None, None, None) if the input list is empty.
+        Raises TypeError if the input list contains non-numeric values.
     """
     if not numbers:
-        raise ValueError("Input list cannot be empty.")
+        return None, None, None
 
-    for item in numbers:
-        if not isinstance(item, (int, float)):
-            raise ValueError("Input list must contain only numbers.")
-
-    total = math.fsum(numbers)  # Use fsum for potentially improved floating-point accuracy
-    maximum = max(numbers)
-    minimum = min(numbers)
-
-    return total, maximum, minimum
+    try:
+        min_val = min(numbers)
+        max_val = max(numbers)
+        sum_val = sum(numbers)
+        return min_val, max_val, sum_val
+    except TypeError as e:
+        raise TypeError("List elements must be numeric.") from e  # More descriptive error message
 
 
-# Example usage
-try:
-    my_numbers = [1.5, 2.7, 3.2, 4.8, 0.1]
-    sum_result, max_result, min_result = analyze_numbers(my_numbers)
-    print(f"Sum: {sum_result}")
-    print(f"Maximum: {max_result}")
-    print(f"Minimum: {min_result}")
+@app.route("/", methods=["GET", "POST"])
+def index():
+    min_val = None
+    max_val = None
+    sum_val = None
+    avg_val = None
+    error_msg = None  # Initialize error_msg
 
-    empty_list = []
-    sum_result, max_result, min_result = analyze_numbers(empty_list)  # This will raise a ValueError
-except ValueError as e:
-    print(f"Error: {e}")
+    if request.method == "POST":
+        try:
+            numbers_str = request.form.get("numbers")
+            if not numbers_str:
+                 raise ValueError("Input cannot be empty.") # Handle empty input case.
+            numbers = [float(x.strip()) for x in numbers_str.split(",")] # strip whitespace from input
+            min_val, max_val, sum_val = min_max_sum(numbers)
+            if sum_val is not None:
+                avg_val = sum_val / len(numbers)
+        except (ValueError, TypeError) as e:
+            error_msg = str(e)  # Store the specific error message
+
+    return render_template("index.html", min=min_val, max=max_val, sum=sum_val, avg=avg_val, error=error_msg)
 
 
-try:
-    my_numbers_with_string = [1.2, 2, "hello"]
-    sum_result, max_result, min_result = analyze_numbers(my_numbers_with_string)  # This will now raise a ValueError
-except ValueError as e:
-    print(f"An error occurred: {e}")
+if __name__ == "__main__":
+    app.run(debug=True)
