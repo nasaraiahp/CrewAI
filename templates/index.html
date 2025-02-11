@@ -3,65 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Number Summation</title>
+    <title>Sum Numbers</title>
     <style>
         body {
             font-family: sans-serif;
-            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
         }
-        #container {
-            width: 90%; /* Responsive width */
-            max-width: 600px; /* Maximum width */
-            margin: 0 auto;
+        form {
+            background-color: #fff;
             padding: 20px;
-            box-sizing: border-box; /* Include padding in width calculation */
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            max-width: 400px; /* Added for responsiveness */
+            width: 90%; /* Added for responsiveness */
         }
         input[type="text"] {
-            width: calc(100% - 22px); /* Account for padding and border */
+            width: calc(100% - 22px); /* Adjust for padding and border */
             padding: 10px;
             margin-bottom: 10px;
-            box-sizing: border-box;
             border: 1px solid #ccc;
-            border-radius: 3px;
+            border-radius: 4px;
+            box-sizing: border-box;
         }
-        input[type="submit"] {
-            padding: 10px 20px;
+        button {
             background-color: #4CAF50;
             color: white;
+            padding: 10px 15px;
             border: none;
+            border-radius: 4px;
             cursor: pointer;
-            border-radius: 3px;
+            width: 100%; /* Make button full width */
         }
-        .error {
-            color: red;
-            margin-bottom: 10px;
+         #result {
+            margin-top: 20px;
+            font-weight: bold;
+            text-align: center; /* Center the result */
         }
-
-        @media (max-width: 480px) {
-            #container {
-                width: 95%;  /* Further adjustment for smaller screens */
-                padding: 15px; /* Reduce padding on smaller screens */
-             }       
-        }
-
     </style>
 </head>
 <body>
-    <div id="container">
-        <h1>Sum Numbers</h1>
-        {% if error %}
-            <p class="error">{{ error }}</p>
-        {% endif %}
-        <form method="POST">
-            <label for="numbers">Enter comma-separated numbers:</label><br>
-            <input type="text" id="numbers" name="numbers" value="{{ numbers|default('') }}"><br>
-            <input type="submit" value="Calculate">
-        </form>
-        {% if total %}
-            <p>The sum is: {{ total }}</p>
-        {% endif %}
-    </div>
+
+    <h1>Sum Numbers</h1>
+
+    <form method="POST">
+        <label for="numbers">Enter numbers separated by commas:</label><br>
+        <input type="text" id="numbers" name="numbers" placeholder="e.g., 1, 2, 3, 4.5"><br><br>
+        <button type="submit">Calculate Sum</button>
+    </form>
+
+    {% if result %}
+        <div id="result">Result: {{ result }}</div>
+    {% endif %}
+
 </body>
 </html>
