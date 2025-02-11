@@ -4,33 +4,20 @@ from typing import List, Union
 app = Flask(__name__)
 
 @app.route("/", methods=["GET", "POST"])
-def average():
-    result = None
+def sum_numbers():
     if request.method == "POST":
+        numbers_str = request.form.get("numbers")
+        if not numbers_str:
+            return render_template("index.html", error="Please enter numbers.")
+
         try:
-            numbers_str = request.form.get("numbers")
-            if not numbers_str:
-                raise ValueError("Input cannot be empty.")
+            numbers: List[Union[int, float]] = [float(x.strip()) for x in numbers_str.split(",")]
+            total: Union[int, float]] = sum(numbers)
+            return render_template("index.html", total=total, numbers=numbers_str)
+        except ValueError:
+            return render_template("index.html", error="Invalid input. Please enter comma-separated numbers.")
 
-            # Improved number parsing with more robust error handling
-            try:
-                numbers_list = [float(x.strip()) for x in numbers_str.split(",")]
-                numbers_list = [x for x in numbers_list if x is not None]  # Remove any None values
-            except ValueError:
-                raise ValueError("Invalid input. Please enter numbers separated by commas.")
-
-
-            if not numbers_list:
-                raise ValueError("Please enter valid numbers.")
-
-            result = sum(numbers_list) / len(numbers_list)
-        except ValueError as e:
-            result = f"Error: {e}"
-        except Exception as e:  # Catching general exceptions for robustness.  Log this!
-            result = "An unexpected error occurred. Please try again later."  # Don't expose internal error details
-            print(f"Unexpected error: {e}") # Log the actual error for debugging
-
-    return render_template("average.html", result=result)
+    return render_template("index.html")
 
 
 if __name__ == "__main__":
