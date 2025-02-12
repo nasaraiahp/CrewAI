@@ -10,21 +10,22 @@ def average():
         try:
             numbers_str = request.form.get("numbers")
             if not numbers_str:
-                result = "Input is required."  # Handle empty input
-            else:
-                numbers_list: List[Union[int, float]] = [
-                    float(x.strip()) for x in numbers_str.split(",") if x.strip()
-                ]
-                if numbers_list:
-                    result = sum(numbers_list) / len(numbers_list)
-                else:
-                    result = "Invalid input. Please enter numbers separated by commas." # Clarify error message for empty list after stripping
+                raise ValueError("Input cannot be empty.")
 
+            try:
+                # More efficient parsing using list comprehension and map
+                numbers_list: List[float] = [float(x.strip()) for x in numbers_str.split(',')]
+                if not numbers_list:  # Check after conversion
+                    raise ValueError("List of numbers cannot be empty.")
 
-        except ValueError:
-            result = "Invalid input. Please enter valid numbers separated by commas." # More specific error message
+                result = sum(numbers_list) / len(numbers_list)
+            except ValueError as e:
+                # More specific error message for parsing issues
+                result = f"Error: Invalid input. Please enter numbers separated by commas. ({e})"
+
+        except ValueError as e:
+            result = f"Error: {e}"  # Generic error handling
     return render_template("average.html", result=result)
 
-
 if __name__ == "__main__":
-    app.run(debug=False) # Disable debug in production
+    app.run(debug=True)
