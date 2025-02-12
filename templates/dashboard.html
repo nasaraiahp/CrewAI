@@ -7,22 +7,82 @@
 <body>
     <h1>Dashboard</h1>
 
-    <div style="width: 50%;">
+    <div style="width:40%; float:left;">
         <canvas id="chart1"></canvas>
     </div>
-    <div style="width: 50%;">
+    <div style="width:40%; float:left;">
         <canvas id="chart2"></canvas>
     </div>
-    <div style="width: 50%;">
+    <div style="clear:both;"></div>  <!-- Clearing floats here for better layout -->
+    <div style="width:40%; float:left;">
         <canvas id="chart3"></canvas>
     </div>
+    <div style="width:40%; float:left;">
+        <canvas id="chart4"></canvas>
+    </div>
+    <div style="clear:both;"></div>  <!-- Clearing floats here for better layout -->
+    <div style="width:40%; float:left;">
+        <canvas id="chart5"></canvas>
+    </div>
+
+
 
     <script>
-        // Accessing chart data from Jinja template
-        let chartData = {{ chart_data | safe }};
+        // Function to fetch chart data and create charts
+        function createCharts() {
+            fetch('/chart_data')  // Fetch data from the API endpoint
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`); // Handle errors
+                    }
+                    return response.json();
+                })
+                .then(chartData => {  // Now 'chartData' contains the JSON data
 
-        // Chart 1: Bar Chart
-      // ... (rest of the charting code using chartData['chart1'], etc.)
+
+                    // Chart 1 (Line chart)
+                    new Chart(document.getElementById('chart1').getContext('2d'), {
+                        type: 'line',
+                        data: chartData.chart1
+                    });
+
+
+                    // ... (Other charts - repeat the pattern below)
+
+                     new Chart(document.getElementById('chart2').getContext('2d'), {
+                        type: 'bar',
+                        data: chartData.chart2,
+                        options: { scales: { y: { beginAtZero: true } } }
+                    });
+
+
+                    new Chart(document.getElementById('chart3').getContext('2d'), {
+                        type: 'pie',
+                        data: chartData.chart3
+                    });
+
+
+                    new Chart(document.getElementById('chart4').getContext('2d'), {
+                        type: 'scatter',
+                        data: chartData.chart4
+                    });
+
+                    new Chart(document.getElementById('chart5').getContext('2d'), {
+                        type: 'doughnut',
+                        data: chartData.chart5
+                    });
+
+
+                })
+                .catch(error => {
+                    console.error("Error fetching chart data:", error);
+                    // Display error message to the user (e.g., in a div)
+                });
+        }
+
+
+        createCharts(); // Call the function to create charts
+
     </script>
 </body>
 </html>
