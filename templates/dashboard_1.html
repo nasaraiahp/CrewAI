@@ -1,13 +1,32 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Upload Excel File</title>
+    <title>Excel Chart Dashboard</title>
 </head>
 <body>
     <h1>Upload Excel File</h1>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <ul class="flashes">
+            {% for message in messages %}
+                <li>{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+
+
     <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xlsx, .xls"> <p>Only xlsx and xls files are allowed.</p>
-        <input type="submit" value="Upload">
+        <input type="file" name="file" accept=".xlsx, .xls">
+        <button type="submit">Upload</button>
     </form>
+
+    <div id="dashboard">
+        {% for chart in charts %}
+            {{ chart | safe }}
+        {% endfor %}
+    </div>
 </body>
 </html>
