@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h1>Dashboard</h1>
+    {% for chart in charts %}
+        {{ chart | safe }} <br>
+    {% endfor %}
+</body>
+</html>
