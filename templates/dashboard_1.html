@@ -1,64 +1,19 @@
+<!-- dashboard.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Sales Charts</title>
+    <title>Sales Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        /* Style to place charts side-by-side */
-        .chart-container {
-            display: flex;
-            flex-wrap: wrap; /* Allow wrapping on smaller screens */
-            justify-content: space-around; /* Distribute charts evenly */
-        }
-        canvas {
-            width: 45%; /* Adjust as needed */
-            margin: 10px;
-        }
-
-    </style>
 </head>
 <body>
-    <div class="chart-container">
-        <canvas id="chart1"></canvas>
-        <canvas id="chart2"></canvas>
-        <canvas id="chart3"></canvas>
-        <canvas id="chart4"></canvas>
-    </div>
-    <script>
-        // Data (Replace with actual data from your database queries)
-        const salesByRegion = {
-            labels: ['North', 'South', 'East', 'West'],
-            data: [250, 320, 180, 270]
-        };
-         // ... similar data objects for other charts
+    <h1>Sales Dashboard</h1>
 
-        function createChart(canvasId, chartType, data, label, backgroundColor, borderColor) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            new Chart(ctx, {
-                type: chartType,
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: label,
-                        data: data.data,
-                        backgroundColor: backgroundColor,
-                        borderColor: borderColor,
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-        }
+    <canvas id="salesByRegion" width="400" height="200"></canvas>
+    <canvas id="salesByProduct" width="400" height="200"></canvas>
+    <canvas id="salesTrend" width="400" height="200"></canvas>
+    <canvas id="salesByRegionProduct" width="400" height="200"></canvas>
+    <canvas id="avgSalesPerMonth" width="400" height="200"></canvas>
 
-
-        createChart('chart1', 'bar', salesByRegion, 'Total Sales by Region', ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)'], ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)']); 
-        // ... Call createChart for the other charts similarly, providing appropriate data
-    </script>
+    <script src="scripts.js"></script>
 </body>
 </html>
