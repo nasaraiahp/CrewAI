@@ -1,18 +1,10 @@
--- No significant changes needed.  Using UPPERCASE for SQL keywords is common practice for readability.
-CREATE TABLE Sales (
+CREATE TABLE SalesData (
+    SalesID INT PRIMARY KEY AUTO_INCREMENT, -- Add a primary key for better data management
     Region VARCHAR(50) NOT NULL,
     Product VARCHAR(50) NOT NULL,
-    Sales INT NOT NULL
+    Sales DECIMAL(10, 2) NOT NULL, -- Use DECIMAL for currency values
+    SalesDate DATE NOT NULL,
+    INDEX RegionIndex (Region),  -- Index for faster queries by region
+    INDEX ProductIndex (Product), -- Index for faster queries by product
+    INDEX SalesDateIndex (SalesDate) -- Index for faster queries by date
 );
-
-INSERT INTO Sales (Region, Product, Sales) VALUES
-('North', 'A', 100),
-('North', 'B', 150),
-('South', 'A', 200),
-('South', 'B', 120),
-('East', 'A', 80),
-('East', 'B', 100),
-('West', 'A', 180),
-('West', 'B', 90);
-
--- Queries remain the same. Consider adding indexes if the Sales table becomes very large.
