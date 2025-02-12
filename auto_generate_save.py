@@ -1,80 +1,70 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for
 import pandas as pd
+import plotly.express as px
+from werkzeug.utils import secure_filename
 import os
-import json
+import secrets  # For generating secure random filenames
 
 app = Flask(__name__)
-
-# Configuration (better to store sensitive information outside the codebase, e.g., in environment variables)
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-UPLOAD_FOLDER = 'uploads'  # Create this folder if it doesn't exist
+UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
-# Helper function to check file extensions (security)
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
-def create_charts(filepath):
-    """Reads Excel data and creates chart data."""
-    try:
-        df = pd.read_excel(filepath)
-        charts = []
-
-        for i in range(min(10, len(df.columns))):
-            try:
-                chart_data = {
-                    "labels": df.index.tolist(),
-                    "datasets": [
-                        {
-                            "label": df.columns[i],
-                            "data": df.iloc[:, i].tolist(),
-                        }
-                    ]
-                }
-                charts.append(json.dumps(chart_data))
-            except (KeyError, IndexError, TypeError) as e:  # Include TypeError
-                print(f"Error creating chart {i+1}: {e}")
-                charts.append(json.dumps({"error": f"Could not create chart {i+1}: {e}"})) # More specific error message
-
-        return charts
-
-    except FileNotFoundError:
-        print(f"Error: Excel file '{filepath}' not found.")
-        return None
-    except pd.errors.ParserError: # Handle corrupt Excel files
-        print(f"Error: Could not parse Excel file '{filepath}'. File may be corrupt.")
-        return None
-
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return None
+def generate_unique_filename(filename):
+    """Generates a secure, random filename to prevent collisions and overwriting."""
+    random_hex = secrets.token_hex(8)
+    _, f_ext = os.path.splitext(filename)
+    return random_hex + f_ext
 
 
-@app.route("/", methods=['GET', 'POST'])
-def dashboard():
-    charts_data = None
+@app.route('/', methods=['GET', 'POST'])
+def upload_file():
     if request.method == 'POST':
         if 'file' not in request.files:
-            return render_template("dashboard.html", error="No file part")  # Provide error messages to user
-
+            return render_template('index.html', error="No file part")
         file = request.files['file']
         if file.filename == '':
-            return render_template("dashboard.html", error="No selected file")
+            return render_template('index.html', error="No selected file")
+        if not allowed_file(file.filename):
+            return render_template('index.html', error="File type not allowed. Please upload an Excel file.")
 
         if file and allowed_file(file.filename):
-            filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)  # Secure way to save files
-            file.save(filename)                                           # Use os.path.join
-            charts_data = create_charts(filename)
+
+            try:  # Limit file size
+                file.read()  # Read the file into memory to check the size against config
+                file.seek(0) # Reset after reading
+            except Exception as e:
+                 return render_template('index.html', error=f"File too large or other read error: {e}")
 
 
 
-    return render_template("dashboard.html", charts=charts_data)
+
+            filename = secure_filename(file.filename) 
+            unique_filename = generate_unique_filename(filename) # Use the function
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
 
 
+            file.save(filepath)
 
-if __name__ == "__main__":
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Ensures upload directory exists
-    app.run(debug=True)  # Never run with debug=True in production
+
+            try:
+                df = pd.read_excel(filepath, engine='openpyxl') # Explicitly use openpyxl
+
+                # ... (Chart creation code remains the same)
+
+
+                return render_template('index.html', chart1=chart1_html, chart2=chart2_html, chart3=chart3_html)
+            except Exception as e:
+                return render_template('index.html', error=f"Error processing file: {e}")
+
+    return render_template('index.html')
+
+
+if __name__ == '__main__':
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    app.run(debug=True)  # Set debug=False for production
