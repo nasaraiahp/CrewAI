@@ -1,15 +1,35 @@
+-- Create the table (add primary key or unique constraint if applicable)
 CREATE TABLE Sales (
-    Region VARCHAR(50) NOT NULL CHECK (Region IN ('North', 'South', 'East', 'West')), -- Enforce valid regions
-    Product VARCHAR(50) NOT NULL CHECK (Product IN ('A', 'B', 'C')), -- Enforce valid products
-    Sales INT NOT NULL CHECK (Sales >= 0) -- Ensure sales are non-negative
+    SalesID INT PRIMARY KEY AUTO_INCREMENT, -- Added a primary key
+    Region VARCHAR(50) NOT NULL,
+    Product VARCHAR(50) NOT NULL,
+    Sales INT NOT NULL,
+    Date DATE NOT NULL
 );
 
--- Use parameterized INSERT statements to prevent SQL injection (though not strictly necessary here as values are hardcoded)
-INSERT INTO Sales (Region, Product, Sales) VALUES
-('North', 'A', 1000), ('North', 'B', 1500), ('South', 'A', 2000),
-('South', 'C', 1200), ('East', 'B', 800), ('East', 'C', 1800),
-('West', 'A', 1100), ('West', 'B', 900), ('West', 'C', 2500);
+-- Insert sample data
+INSERT INTO Sales (Region, Product, Sales, Date) VALUES
+('North', 'A', 100, '2023-01-01'),
+('North', 'B', 150, '2023-01-01'),
+('South', 'A', 200, '2023-01-01'),
+('South', 'B', 250, '2023-01-01'),
+('North', 'A', 120, '2023-01-08'),
+('North', 'B', 180, '2023-01-08'),
+('South', 'A', 220, '2023-01-08'),
+('South', 'B', 280, '2023-01-08');
 
--- The existing queries are generally fine.  Adding indexes could improve performance if the dataset is large.
-CREATE INDEX idx_region ON Sales (Region);
-CREATE INDEX idx_product ON Sales (Product);
+
+-- Queries for charts (using aliases for clarity)
+-- Query 1: Total sales by region
+SELECT Region, SUM(Sales) AS TotalSalesByRegion FROM Sales GROUP BY Region;
+
+-- Query 2: Total sales by product
+SELECT Product, SUM(Sales) AS TotalSalesByProduct FROM Sales GROUP BY Product;
+
+-- Query 3: Sales trend over time
+SELECT Date, SUM(Sales) AS TotalSalesByDate FROM Sales GROUP BY Date ORDER BY Date;
+
+-- Query 4: Average sales per region per product
+SELECT Region, Product, AVG(Sales) AS AverageSalesByRegionProduct
+FROM Sales 
+GROUP BY Region, Product;
