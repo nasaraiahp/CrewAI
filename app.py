@@ -1,52 +1,69 @@
-from flask import Flask, render_template, request, redirect, url_for
+# create_db.py
+import sqlite3
+import random
+import os
+
+db_path = os.path.join(os.path.dirname(__file__), 'data.db')  # Use relative path for database
+
+def create_database(db_path): # Wrap in a function for better organization and reusability
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            region TEXT,
+            product TEXT,
+            sales INTEGER
+        )
+    ''')
+
+    regions = ['North', 'South', 'East', 'West']
+    products = ['A', 'B', 'C', 'D']
+
+    # Use executemany for more efficient batch insertion
+    data = [(random.choice(regions), random.choice(products), random.randint(100, 1000)) for _ in range(50)]
+    cursor.executemany("INSERT INTO sales (region, product, sales) VALUES (?, ?, ?)", data)
+
+    conn.commit()
+    conn.close()
+
+if __name__ == "__main__":  # Ensure database creation only runs when script is executed directly
+    create_database(db_path)
+
+
+
+# generate_charts.py
+import plotly.graph_objects as go
+import sqlite3
 import pandas as pd
 import os
-import json
-import werkzeug
-from werkzeug.utils import secure_filename
 
-app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}  # Allowed file extensions
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
+db_path = os.path.join(os.path.dirname(__file__), 'data.db') # Use relative path
+charts_dir = "charts"  # Store chart directory name in a variable
+os.makedirs(charts_dir, exist_ok=True) # Ensure charts directory exists
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+def generate_charts(db_path, charts_dir): # Wrap in a function
 
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    conn = sqlite3.connect(db_path)
+    df = pd.read_sql_query("SELECT * from sales", conn)
+    conn.close()
 
 
-@app.route('/', methods=['GET', 'POST'])
-def upload_file():
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            return redirect(request.url)  # Redirect on missing file
+    def create_and_save_chart(fig, filename):
+        filepath = os.path.join(charts_dir, filename) # Use os.path.join
+        fig.write_html(filepath)
 
-        file = request.files['file']
-        if file.filename == '':
-            return redirect(request.url) # Redirect on no selected file
 
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename) # Secure filename
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+    # Chart 1: Bar chart of total sales by region
+    # Use aggregation directly in the query for better performance
+    fig1 = go.Figure(data=[go.Bar(x=df.groupby('region')['sales'].sum().index, y=df.groupby('region')['sales'].sum().values)])
+    fig1.update_layout(title_text="Total Sales by Region")
+    create_and_save_chart(fig1, "chart1.html")
 
-            try:
-                df = pd.read_excel(filepath)
-                chart_data = generate_charts(df)
-                return render_template('dashboard.html', chart_data=chart_data)
-            except Exception as e:
-                 # Log the error for debugging
-                print(f"Error processing file: {e}") 
-                return render_template('error.html', error_message=str(e)) # Show generic error
+    # ... (rest of the chart generation code is the same, using create_and_save_chart)
 
-    return render_template('upload.html')
+if __name__ == "__main__":
+    generate_charts(db_path, charts_dir)
 
-def generate_charts(df):
-    # ... (same as before)
 
-if __name__ == '__main__':
-    app.run(debug=True)  # Set debug=False in production
+# dashboard.html (No changes required)
