@@ -1,67 +1,87 @@
-# app.py
-import os
 from flask import Flask, render_template, request, redirect, url_for
 import pandas as pd
 import plotly.express as px
+import os
+import werkzeug
 from werkzeug.utils import secure_filename
-import secrets  # Import secrets module
+import uuid
 
 app = Flask(__name__)
-
-# Generate a cryptographically secure secret key
-SECRET_KEY = secrets.token_urlsafe(32)  # Improved security
-app.secret_key = SECRET_KEY
-
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}  # Restrict file types
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}  # Allowed file extensions
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():
     if request.method == 'POST':
         if 'file' not in request.files:
-            return redirect(request.url)  # Handle missing file
+            return render_template('error.html', error="No file part")
         file = request.files['file']
         if file.filename == '':
-            return redirect(request.url) # Handle no selected file
+            return render_template('error.html', error="No selected file")
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)  # Sanitize filename
+            # Add UUID to filename to prevent collisions and overwriting:
+            filename = str(uuid.uuid4()) + "_" + filename
 
-        if file and allowed_file(file.filename):  # Check file extension
-            filename = secure_filename(file.filename)  # Use secure filenames
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
+
             try:
                 df = pd.read_excel(filepath)
                 charts = create_charts(df)
-                return render_template('dashboard.html', charts=charts)
+
+                if isinstance(charts, list):  # Check if chart creation was successful
+                     return render_template('dashboard.html', charts=charts)
+                else: # create_charts may have returned a redirect to an error page due to issues
+                     return charts
+
             except Exception as e:
-                return render_template('error.html', error=str(e))
+                return render_template('error.html', error=f"Error processing file: {e}")
+
         else:
             return render_template('error.html', error="Invalid file type. Please upload an Excel file.")
 
     return render_template('upload.html')
 
+
 def create_charts(df):
-    charts = []  # Initialize charts list to handle potential missing columns
     try:
-        chart1 = px.bar(df, x='column1', y='column2', title='Chart 1').to_html(full_html=False)
-        charts.append(chart1)
-        chart2 = px.scatter(df, x='column3', y='column4', title='Chart 2').to_html(full_html=False)
-        charts.append(chart2)
-        chart3 = px.pie(df, values='column5', names='column6', title='Chart 3').to_html(full_html=False)
-        charts.append(chart3)
+        # Explicitly specify column names – replace with your actual column names
+        x_col = "col1"
+        y_col = "col2"
 
-    except KeyError as e:  # Gracefully handle missing columns
-         return render_template('error.html', error=f"Column missing in Excel: {e}") # More specific error
+        if x_col not in df.columns or y_col not in df.columns:
+           raise KeyError(f"Column(s) missing from the sheet: {x_col if x_col not in df.columns else ''} {y_col if y_col not in df.columns else ''}")
 
-    return charts
+        chart1 = px.bar(df, x=x_col, y=y_col, title='Chart 1').to_html(full_html=False)
+        chart2 = px.scatter(df, x='col3', y='col4', title='Chart 2').to_html(full_html=False)
+        chart3 = px.pie(df, values='col5', names='col6', title='Chart 3').to_html(full_html=False)  # Corrected
 
+        return [chart1, chart2, chart3]
+    except KeyError as e:
+
+        return render_template("error.html", error=f"Column Missing from the sheet: {e}")
+    except Exception as e:
+        return render_template("error.html", error=f"Error creating charts: {e}")
+
+
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/error')
+def error():
+    return render_template('error.html')
 
 if __name__ == '__main__':
-    app.run(debug=False)  # Disable debug in production
+    app.run(debug=True)
