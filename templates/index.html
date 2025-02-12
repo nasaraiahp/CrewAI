@@ -1,79 +1,70 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Excel Chart Generator</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
         .chart-container {
-            width: 45%;
-            margin: 20px;
-            float: left;
+            width: 90%; /* Make charts slightly smaller */
+            max-width: 900px;
+            margin: 20px auto;
+            height: 400px; /* Consistent height */
+             overflow: auto; /* Add scrollbars if chart content overflows */
+
         }
-        @media (max-width: 768px) {
+        /* Style for the indicator chart to center it */
+        .indicator-chart {
+            display: flex;
+            justify-content: center; /* Horizontally center */
+            align-items: center;    /* Vertically center */
+            height: 100%;
+        }
+        @media (max-width: 768px) { /* Adjust for smaller screens */
             .chart-container {
-                width: 90%;
-                float: none;
+                height: 300px; /* Reduce height on smaller screens if needed */
             }
         }
+
+
     </style>
 </head>
 <body>
-    <h1>Dashboard</h1>
 
-     <!-- File upload form -->
-    <form method="POST" enctype="multipart/form-data">  
-        <input type="file" name="file">
-        <input type="submit" value="Upload">
+<div class="container">
+    <h1>Excel Chart Generator</h1>
+
+    {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="file">Choose Excel file (xlsx, xls):</label> <br>  </div>
+            <input type="file" class="form-control-file" id="file" name="file" accept=".xlsx, .xls"> </div> <br>
+        <button type="submit" class="btn btn-primary">Generate Charts</button>
     </form>
 
-    <!-- Display error messages if any -->
-    {% if error %}
-        <p style="color: red;">{{ error }}</p>
+      <div class="chart-container">
+    {% if chart1 %}
+         {{ chart1 | safe }}
     {% endif %}
+    </div>
 
-    <div id="charts-container">  </div>
+    <div class="chart-container">
+        {% if chart2 %}
+             {{ chart2 | safe }}
+        {% endif %}
+    </div>
+
+    <div class="chart-container indicator-chart">  </div> <div class="chart-container">
+        {% if chart3 %}
+             {{ chart3 | safe }}
+        {% endif %}
+    </div>
+
+</div>
 
 
-    {% if charts %}
-        {% for chart_data in charts %}
 
-            <div class="chart-container">
-                <canvas id="chart{{ loop.index }}"></canvas>
-                <script>
-                    // Get the charts container div
-                    const chartsContainer = document.getElementById('charts-container');
-
-                    // Create a new div for each chart container
-                    const chartContainer = document.createElement('div');
-                    chartContainer.className = 'chart-container'; // Add the CSS class
-
-                    // Create the canvas element
-                    const canvas = document.createElement('canvas');
-                    canvas.id = 'chart{{ loop.index }}';
-
-                    // Append the canvas to its container div
-                    chartContainer.appendChild(canvas);
-                    chartsContainer.appendChild(chartContainer);
-
-                    const ctx{{ loop.index }} = document.getElementById('chart{{ loop.index }}').getContext('2d');
-                    const chartData{{ loop.index }} = JSON.parse('{{ chart_data | safe }}');
-
-                    if (chartData{{ loop.index }}.error) {
-                        ctx{{ loop.index }}.font = '16px sans-serif'; // Set font for error messages
-                        ctx{{ loop.index }}.fillText(chartData{{ loop.index }}.error, 10, 50);
-                    } else {
-                        new Chart(ctx{{ loop.index }}, {
-                            type: 'line',
-                            data: chartData{{ loop.index }},
-                            options: {}
-                        });
-                    }
-
-                </script>
-            </div>
-        {% endfor %}
-    {% else %}
-        <p>No data available to create charts.</p>
-    {% endif %}
 </body>
 </html>
