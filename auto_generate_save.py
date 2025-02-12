@@ -1,62 +1,80 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request
 import pandas as pd
-import io
-import json
 import os
+import json
 
 app = Flask(__name__)
 
-# Secure way to generate secret key (do this only once and store securely)
-app.secret_key = os.urandom(24)
+# Configuration (better to store sensitive information outside the codebase, e.g., in environment variables)
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
+UPLOAD_FOLDER = 'uploads'  # Create this folder if it doesn't exist
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
+
+# Helper function to check file extensions (security)
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-@app.route("/", methods=["GET", "POST"])
-def index():
-    chart_data = None
-    error_message = None  # Initialize error message
-    if request.method == "POST":
-        try:
-            file = request.files["excel_file"]
-            if file.filename == '':
-                raise ValueError("No selected file")
+def create_charts(filepath):
+    """Reads Excel data and creates chart data."""
+    try:
+        df = pd.read_excel(filepath)
+        charts = []
 
-            # Check allowed file extensions for better security
-            allowed_extensions = {'xls', 'xlsx'}
-            if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
-                raise ValueError("Invalid file type. Please upload an Excel file (.xls or .xlsx).")
-
-
-            # Use a more robust way to handle different Excel formats
+        for i in range(min(10, len(df.columns))):
             try:
-                df = pd.read_excel(file)
-            except Exception as e:
-                 raise ValueError("Error reading Excel file. Please ensure it's a valid format." + str(e))
-
-            # Explicitly select columns for charting (more robust)
-            try:  # Make the column selection safer
-                x_column = request.form.get('x_column') or df.columns[0]  # Default to 1st if none selected
-                y_column = request.form.get('y_column') or df.columns[1]
                 chart_data = {
-                    "labels": df[x_column].tolist(),  # x-axis
-                    "data": df[y_column].tolist()     # y-axis
+                    "labels": df.index.tolist(),
+                    "datasets": [
+                        {
+                            "label": df.columns[i],
+                            "data": df.iloc[:, i].tolist(),
+                        }
+                    ]
                 }
+                charts.append(json.dumps(chart_data))
+            except (KeyError, IndexError, TypeError) as e:  # Include TypeError
+                print(f"Error creating chart {i+1}: {e}")
+                charts.append(json.dumps({"error": f"Could not create chart {i+1}: {e}"})) # More specific error message
 
-            except IndexError as e:
-                raise ValueError("The Excel file needs at least two columns for charting. " + str(e))
-            except KeyError as e:
-                raise ValueError(f"Selected columns ({x_column}, {y_column}) not found in the Excel file. " + str(e))
+        return charts
+
+    except FileNotFoundError:
+        print(f"Error: Excel file '{filepath}' not found.")
+        return None
+    except pd.errors.ParserError: # Handle corrupt Excel files
+        print(f"Error: Could not parse Excel file '{filepath}'. File may be corrupt.")
+        return None
+
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
+
+
+@app.route("/", methods=['GET', 'POST'])
+def dashboard():
+    charts_data = None
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            return render_template("dashboard.html", error="No file part")  # Provide error messages to user
+
+        file = request.files['file']
+        if file.filename == '':
+            return render_template("dashboard.html", error="No selected file")
+
+        if file and allowed_file(file.filename):
+            filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)  # Secure way to save files
+            file.save(filename)                                           # Use os.path.join
+            charts_data = create_charts(filename)
 
 
 
-
-        except ValueError as e:
-            error_message = str(e)
-        except Exception as e: # Catch general exceptions like incorrect file format
-            error_message = "An unexpected error occurred during file processing." + str(e)
-
-    return render_template("index.html", chart_data=chart_data, error=error_message)
+    return render_template("dashboard.html", charts=charts_data)
 
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Ensures upload directory exists
+    app.run(debug=True)  # Never run with debug=True in production
