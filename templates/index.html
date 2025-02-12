@@ -1,77 +1,79 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Excel Chart Generator</title>
+    <title>Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            width: 45%;
+            margin: 20px;
+            float: left;
+        }
+        @media (max-width: 768px) {
+            .chart-container {
+                width: 90%;
+                float: none;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h1>Excel Chart Generator</h1>
+    <h1>Dashboard</h1>
 
-    {% if error %}
-        <div style="color: red;">{{ error }}</div>
-    {% endif %}
-
-    <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="excel_file" accept=".xls, .xlsx">
-        <label for="x_column">X-axis Column:</label>
-        <select name="x_column"> </select>  </label>
-        <label for="y_column">Y-axis Column:</label>
-        <select name="y_column"> </select>  </label>       
-        <input type="submit" value="Generate Chart">
+     <!-- File upload form -->
+    <form method="POST" enctype="multipart/form-data">  
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
     </form>
 
-    <div id="chart-container" style="width: 80%; margin: 20px auto;">  </div>
-
-    {% if chart_data %}
-    <canvas id="myChart"></canvas>
-    <script>
-
-        var chartContainer = document.getElementById('chart-container');
-        var canvas = document.getElementById('myChart');
-        canvas.width = chartContainer.offsetWidth; // Set width dynamically
-        canvas.height = chartContainer.offsetWidth * 0.6; // Adjust height as needed
-
-
-        var ctx = canvas.getContext('2d');
-        var chartData = {{ chart_data | tojson | safe }}; // More efficient JSON handling
-
-        var myChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: chartData.labels,
-                datasets: [{
-                    label: 'Excel Data',
-                    data: chartData.data,
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true, // Core responsive option for Chart.js
-                maintainAspectRatio: false, // Allow chart to fill container
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: '{{y_column}}' // dynamic y-axis title
-                        }
-
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: '{{x_column}}' // dynamic x-axis title
-                        }
-                    }
-                }
-            }
-        });
-    </script>
+    <!-- Display error messages if any -->
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
     {% endif %}
 
+    <div id="charts-container">  </div>
+
+
+    {% if charts %}
+        {% for chart_data in charts %}
+
+            <div class="chart-container">
+                <canvas id="chart{{ loop.index }}"></canvas>
+                <script>
+                    // Get the charts container div
+                    const chartsContainer = document.getElementById('charts-container');
+
+                    // Create a new div for each chart container
+                    const chartContainer = document.createElement('div');
+                    chartContainer.className = 'chart-container'; // Add the CSS class
+
+                    // Create the canvas element
+                    const canvas = document.createElement('canvas');
+                    canvas.id = 'chart{{ loop.index }}';
+
+                    // Append the canvas to its container div
+                    chartContainer.appendChild(canvas);
+                    chartsContainer.appendChild(chartContainer);
+
+                    const ctx{{ loop.index }} = document.getElementById('chart{{ loop.index }}').getContext('2d');
+                    const chartData{{ loop.index }} = JSON.parse('{{ chart_data | safe }}');
+
+                    if (chartData{{ loop.index }}.error) {
+                        ctx{{ loop.index }}.font = '16px sans-serif'; // Set font for error messages
+                        ctx{{ loop.index }}.fillText(chartData{{ loop.index }}.error, 10, 50);
+                    } else {
+                        new Chart(ctx{{ loop.index }}, {
+                            type: 'line',
+                            data: chartData{{ loop.index }},
+                            options: {}
+                        });
+                    }
+
+                </script>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No data available to create charts.</p>
+    {% endif %}
 </body>
 </html>
