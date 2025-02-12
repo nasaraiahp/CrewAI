@@ -1,69 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Average Calculator</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
-        }
-
-        form {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            padding: 20px;
-            border-radius: 8px;
-            background-color: #fff;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-            max-width: 400px; /* Responsive improvement */
-            width: 90%; /* Responsive improvement */
-        }
-
-        input[type="text"] {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box; /* Include padding in width calculation */
-        }
-
-        input[type="submit"] {
-            padding: 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        #result {
-            margin-top: 20px;
-            font-weight: bold;
-            font-size: 1.2em;
-            text-align: center; /* Center the result text */
-         }
-    </style>
+    <title>Excel Chart Generator</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1"> <!-- Add viewport meta tag for responsiveness -->
 </head>
 <body>
-    <h1>Average Calculator</h1>
-    <form method="post">
-        <label for="numbers">Enter numbers separated by commas:</label>
-        <input type="text" name="numbers" id="numbers" placeholder="e.g., 1,2,3,4,5">
-        <input type="submit" value="Calculate">
-    </form>
+    <div class="container">
+        <h1>Excel Chart Generator</h1>
+        <form method="post">
+            <div class="form-group">
+                <label for="columns">Select Columns:</label> <br>
+                {% for column in columns %}
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="checkbox" name="columns" id="{{ column }}" value="{{ column }}"
+                               {% if column in selected_columns %}checked{% endif %}>
+                        <label class="form-check-label" for="{{ column }}">{{ column }}</label>
+                    </div>
+                {% endfor %}
+            </div>
 
-    <div id="result">
-    {% if result %}
-        {{ result }}
-    {% endif %}
+            {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-primary">Generate Chart</button>
+        </form>
+
+        {% if chart_path %}
+            <img src="{{ url_for('static', filename='chart.png') }}" alt="Generated Chart" class="img-fluid">
+        {% endif %}
     </div>
 </body>
 </html>
