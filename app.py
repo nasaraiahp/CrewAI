@@ -1,31 +1,44 @@
-from flask import Flask, request, jsonify
-import mysql.connector  # Or your preferred database connector
+import sqlite3
+import matplotlib.pyplot as plt
+import os
 
-app = Flask(__name__)
+db_path = 'sales_data.db'  # Define database path
 
-# Database connection details (replace with your credentials)
-db_config = {
-    "user": "your_db_user",
-    "password": "your_db_password",
-    "host": "your_db_host",
-    "database": "your_db_name"
-}
+# Use a context manager for better resource management
+with sqlite3.connect(db_path) as conn:  # Use file-based DB for persistence
+    with open('create_table_and_insert.sql', 'r') as sql_file:
+        conn.executescript(sql_file.read())
+    cursor = conn.cursor()
 
-@app.route('/your-data-endpoint', methods=['POST'])
-def get_data():
-    query = request.json.get('query')
-    try:
-        cnx = mysql.connector.connect(**db_config)
-        cursor = cnx.cursor(dictionary=True)  # Use dictionary=True for named results
+    queries = [
+        # ... (queries remain the same)
+    ]
+    chart_titles = [
+        # ... (chart titles remain the same)
+    ]
+
+    chart_dir = "charts"  # Store directory name in a variable
+    if not os.path.exists(chart_dir):
+        os.makedirs(chart_dir)
+
+
+    for i, query in enumerate(queries):
         cursor.execute(query)
         results = cursor.fetchall()
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500  # Return error as JSON
-    finally:
-        if cnx.is_connected():
-            cursor.close()
-            cnx.close()
+        # Handle empty result set
+        if not results:
+            print(f"No data found for query {i+1}. Skipping chart generation.")
+            continue
 
-if __name__ == '__main__':
-    app.run(debug=True)
+        labels = [row[0] for row in results]
+        values = [row[1] for row in results]
+
+        plt.figure(figsize=(8, 6))
+        plt.bar(labels, values)
+        plt.title(chart_titles[i])
+        plt.xlabel(labels[0].split()[0])
+        plt.ylabel('Sales' if any('Sales' in val for val in map(str, values)) else 'Average Sales')  # Simpler y-axis label logic
+        plt.savefig(os.path.join(chart_dir, f"chart{i+1}.png"))  # Use os.path.join for platform independence
+        plt.close()
+
+# Connection is closed automatically by the context manager
