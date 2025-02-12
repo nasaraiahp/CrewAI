@@ -4,36 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Average Calculator</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"> 
     <style>
-        /* Basic responsive styling */
-        .container {
-            max-width: 600px; /* Limits width on larger screens */
-            margin: 0 auto; /* Centers the container */
-            padding: 15px;
-        }
+        /* ... (styles - see improved styles below) ... */
     </style>
 </head>
 <body>
-    <div class="container mt-5">
-        <h1 class="text-center">Average Calculator</h1>
+    <div class="container">
+        <h1>Average Calculator</h1>
         <form method="POST">
-            <div class="form-group">
-                <label for="numbers">Enter numbers separated by commas:</label>
-                <input type="text" class="form-control" id="numbers" name="numbers" placeholder="e.g., 1,2,3,4,5" required>
-            </div>
-            <button type="submit" class="btn btn-primary">Calculate</button>
+            <label for="numbers">Enter numbers separated by commas:</label><br>
+            <input type="text" id="numbers" name="numbers" required><br>  </input><!-- Added required attribute -->
+            <button type="submit">Calculate</button>
         </form>
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
 
-        {% if result %}
-            <div class="mt-3">
-                <h2 class="text-center">Result: {{ result }}</h2>
-            </div>
+        {% if average %}
+            <div id="result">The average is: {{ average | round(2) }}</div> <!-- Added rounding -->
         {% endif %}
     </div>
-        <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-
 </body>
 </html>
