@@ -1,86 +1,67 @@
-from flask import Flask, render_template, request, jsonify
-import pandas as pd
+# app.py
 import os
-import io
-import matplotlib.pyplot as plt
-import base64
-import werkzeug
-from werkzeug.utils import secure_filename
-import secrets
+from flask import Flask, render_template, request, redirect, url_for, flash
+import pandas as pd
+import plotly.express as px
+import secrets  # For generating secure filenames
 
 app = Flask(__name__)
+app.secret_key = secrets.token_hex(16)  # Secure secret key for flash messages
 
-# Securely generate a secret key for session management
-app.secret_key = secrets.token_hex(16) #  Use secrets module for strong random key
+UPLOAD_FOLDER = 'uploads'  # Dedicated uploads folder
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
-# File upload settings - using a more secure approach
-UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'} # Allow only Excel files
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Create the uploads folder if it doesn't exist
 
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/', methods=['GET', 'POST'])
-def upload_file():
-    if request.method == 'POST':
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    charts = []
+    if request.method == "POST":
         if 'file' not in request.files:
-            return jsonify({'error': 'No file part'})
+            flash('No file part')
+            return redirect(request.url)
+
         file = request.files['file']
         if file.filename == '':
-            return jsonify({'error': 'No selected file'})
-        if not allowed_file(file.filename): # Check for allowed file types
-           return jsonify({'error': 'File type not allowed. Please upload an Excel file.'})
+            flash('No selected file')
+            return redirect(request.url)
+
+        if file and allowed_file(file.filename):
+            secure_filename = secrets.token_urlsafe(16) + '.' + file.filename.rsplit('.', 1)[1].lower()
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename)
+            file.save(filepath)  # Save the file securely
+
+            try:
+                df = pd.read_excel(filepath)
+
+                # Chart creation (adapt columns as needed):
+                fig1 = px.bar(df, x='Column1', y='Column2', title='Chart 1 Title')  # Bar chart
+                charts.append(fig1.to_html(full_html=False, div_id='chart1'))
+
+                fig2 = px.scatter(df, x='Column3', y='Column4', color='Column5', title='Chart 2 Title')  # Scatter plot
+                charts.append(fig2.to_html(full_html=False, div_id='chart2'))
 
 
-        try:
-            # Securely handle filename and save uploaded file
-            filename = secure_filename(file.filename) # Use secure_filename 
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            except Exception as e:
+                flash(f"Error processing file: {e}") # Provide informative error message
+                return redirect(request.url)
+            finally:
+                os.remove(filepath) # Remove temporary file after processing
+
+        else:
+            flash("Invalid file type. Allowed types are .xlsx and .xls") # Inform user of invalid file type
 
 
-            file.save(file_path)
-
-
-
-            # Read Excel data using pandas
-            df = pd.read_excel(file_path)
-
-            # Generate charts (example using matplotlib)
-            charts = []
-            for column in df.columns:
-                if pd.api.types.is_numeric_dtype(df[column]):  # Only create charts for numeric columns
-                    plt.figure()  # Create a new figure for each chart
-                    plt.plot(df[column])
-                    plt.title(column)
-                    plt.xlabel('Index')
-                    plt.ylabel('Value')
-
-                    # Save the plot to a BytesIO object
-                    img = io.BytesIO()
-                    plt.savefig(img, format='png')
-                    img.seek(0)
-
-                    # Encode the image as base64
-                    plot_url = base64.b64encode(img.getvalue()).decode('utf8')
-
-                    charts.append({'title': column, 'url': plot_url})
-                    plt.close() # Close plot to free resources
-
-            return render_template('dashboard.html', charts=charts)
-
-
-        except Exception as e:
-            return jsonify({'error': str(e)})
-
-    return render_template('upload.html')
+    return render_template("index.html", charts=charts)
 
 
 
-if __name__ == '__main__':
-    app.run(debug=True) # Never run with debug=True in production!
+
+if __name__ == "__main__":
+    app.run(debug=False)  # Disable debug mode in production
