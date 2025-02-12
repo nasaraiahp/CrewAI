@@ -1,44 +1,31 @@
-# create_db.py
-import sqlite3
-import os
+from flask import Flask, request, jsonify
+import mysql.connector  # Or your preferred database connector
 
-db_path = os.path.join(os.getcwd(), 'sales.db')  # Use os.path.join for platform compatibility
-conn = sqlite3.connect(db_path)
-cursor = conn.cursor()
+app = Flask(__name__)
 
-try:
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales_data (
-            region TEXT,
-            product TEXT,
-            sales INTEGER,
-            month INTEGER,
-            year INTEGER
-        )
-    ''')
+# Database connection details (replace with your credentials)
+db_config = {
+    "user": "your_db_user",
+    "password": "your_db_password",
+    "host": "your_db_host",
+    "database": "your_db_name"
+}
 
-    data = [
-        ('North', 'Product A', 1000, 1, 2024),
-        ('North', 'Product B', 1500, 1, 2024),
-        # ... (rest of the data)
-    ]
+@app.route('/your-data-endpoint', methods=['POST'])
+def get_data():
+    query = request.json.get('query')
+    try:
+        cnx = mysql.connector.connect(**db_config)
+        cursor = cnx.cursor(dictionary=True)  # Use dictionary=True for named results
+        cursor.execute(query)
+        results = cursor.fetchall()
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  # Return error as JSON
+    finally:
+        if cnx.is_connected():
+            cursor.close()
+            cnx.close()
 
-    cursor.executemany("INSERT INTO sales_data VALUES (?, ?, ?, ?, ?)", data)
-    conn.commit()
-
-except sqlite3.Error as e: # Handle potential database errors
-    print(f"Database error: {e}")
-    conn.rollback() # Rollback changes if error occurs
-finally:
-    conn.close() # Ensure connection is closed
-
-# (Optional) Web server code -  Move this to a separate file (e.g., server.py)
-#  In a real application, use a production-ready web framework (Flask, Django, etc.)
-if __name__ == "__main__":  # Only run the server when script is executed directly
-    import http.server
-    import socketserver
-    PORT = 8000
-    Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print("serving at port", PORT)
-        httpd.serve_forever()
+if __name__ == '__main__':
+    app.run(debug=True)
