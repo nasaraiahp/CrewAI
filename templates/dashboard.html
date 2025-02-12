@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Data Dashboard</h1>
+
+    <form method="POST" enctype="multipart/form-data">  </form> {# File upload form #}
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
+
+    <div id="charts" style="display: none;"> {# Initially hidden #}
+         <canvas id="barChart"></canvas>
+         <canvas id="lineChart"></canvas>
+         <canvas id="pieChart"></canvas>
+     </div>
+
+ <script>
+        // ... (Chart.js code - see below for important changes)
+</script>
+
+</body>
+</html>
