@@ -1,53 +1,60 @@
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, jsonify
 import pandas as pd
-import matplotlib.pyplot as plt
 import io
+import json
 import os
 
 app = Flask(__name__)
 
-EXCEL_FILE = os.environ.get("EXCEL_FILE", "your_excel_file.xlsx")  # Use environment variable for file path
-
-# Load data outside the request handling to improve performance
-try:
-    df = pd.read_excel(EXCEL_FILE)
-except FileNotFoundError:
-    print(f"Error: File '{EXCEL_FILE}' not found.")
-    exit()
-except Exception as e:
-    print(f"Error reading Excel file: {e}")
-    exit()
+# Secure way to generate secret key (do this only once and store securely)
+app.secret_key = os.urandom(24)
 
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    columns = df.columns.tolist()
-    selected_columns = request.form.getlist("columns") if request.method == "POST" else []
-    chart_path = None
-    error_message = None
-
-    if request.method == "POST" and selected_columns:
+    chart_data = None
+    error_message = None  # Initialize error message
+    if request.method == "POST":
         try:
-            fig, ax = plt.subplots()  # Use plt.subplots for better figure/axes management
-            for column in selected_columns:
-                ax.plot(df.index, df[column], label=column)
-            ax.legend()
-            ax.set_title("Selected Columns Chart") # Add title for better clarity
-            ax.set_xlabel("Index") # Label X-axis
-            ax.set_ylabel("Values") # Label Y-axis
+            file = request.files["excel_file"]
+            if file.filename == '':
+                raise ValueError("No selected file")
+
+            # Check allowed file extensions for better security
+            allowed_extensions = {'xls', 'xlsx'}
+            if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+                raise ValueError("Invalid file type. Please upload an Excel file (.xls or .xlsx).")
 
 
-            # Save the plot to a temporary file
-            chart_path = "static/chart.png"  # Store in static folder
-            plt.savefig(chart_path)
-            plt.close(fig) # Close the figure to free up memory
+            # Use a more robust way to handle different Excel formats
+            try:
+                df = pd.read_excel(file)
+            except Exception as e:
+                 raise ValueError("Error reading Excel file. Please ensure it's a valid format." + str(e))
 
-        except KeyError as e:
-            error_message = f"Column not found: {e}"
-        except Exception as e:
-            error_message = f"An error occurred during plotting: {e}"
+            # Explicitly select columns for charting (more robust)
+            try:  # Make the column selection safer
+                x_column = request.form.get('x_column') or df.columns[0]  # Default to 1st if none selected
+                y_column = request.form.get('y_column') or df.columns[1]
+                chart_data = {
+                    "labels": df[x_column].tolist(),  # x-axis
+                    "data": df[y_column].tolist()     # y-axis
+                }
 
-    return render_template("index.html", columns=columns, selected_columns=selected_columns, chart_path=chart_path, error=error_message)
+            except IndexError as e:
+                raise ValueError("The Excel file needs at least two columns for charting. " + str(e))
+            except KeyError as e:
+                raise ValueError(f"Selected columns ({x_column}, {y_column}) not found in the Excel file. " + str(e))
+
+
+
+
+        except ValueError as e:
+            error_message = str(e)
+        except Exception as e: # Catch general exceptions like incorrect file format
+            error_message = "An unexpected error occurred during file processing." + str(e)
+
+    return render_template("index.html", chart_data=chart_data, error=error_message)
 
 
 
