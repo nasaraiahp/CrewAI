@@ -1,64 +1,73 @@
 import os
-from flask import Flask, render_template, jsonify
+
 import pandas as pd
+from flask import Flask, render_template, send_from_directory
 
 app = Flask(__name__)
 
-# Configuration (Best practice: Store sensitive information securely, e.g., environment variables)
-app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')  # Securely store uploads
-ALLOWED_EXTENSIONS = {'xlsx'}
+# Configuration (Best practice to separate configuration)
+app.config['EXCEL_FILE'] = 'data.xlsx'  # Relative path
+app.config['UPLOAD_FOLDER'] = 'uploads'  # For future file uploads
+app.config['ALLOWED_EXTENSIONS'] = {'xlsx'}  # Allowed file types
 
-# Helper function to check file extensions (Security: Prevent uploads of malicious file types)
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 
-def load_data(filepath):  # Helper function to load data
-    try:
-        df = pd.read_excel(filepath)
-        return df
-    except FileNotFoundError:
-        print(f"Error: File not found: {filepath}")
-        return None  # Or handle appropriately, e.g., load default data
-    except Exception as e:  # Handle other potential errors during file processing
-        print(f"Error loading file: {e}")
-        return None
-
-
-
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])  # Handle POST for potential file uploads
 def dashboard():
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'your_excel_file.xlsx') # Use a default file, expecting upload functionality later
-    if not os.path.exists(app.config['UPLOAD_FOLDER']):
-        os.makedirs(app.config['UPLOAD_FOLDER'])  # Create if it doesn't exist
+    if request.method == 'POST':  # Handle file upload (Future enhancement)
+        if 'file' not in request.files:
+            return "No file part"
+        file = request.files['file']
+        if file.filename == '':
+            return "No selected file"
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)  # Use secure filenames
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            # Process the uploaded file (e.g., update EXCEL_FILE path)
+            # ...
 
-    df = load_data(filepath)  # Call the helper function
-    if df is None:
-        return "Error loading data. Please check console for details.", 500 # Return error to user
+    # Try to read Excel file, handle exceptions gracefully
+    try:
+        excel_file = app.config.get('EXCEL_FILE')
+        if not os.path.exists(excel_file):
+            raise FileNotFoundError(f"Excel file not found: {excel_file}")
+
+        df = pd.read_excel(excel_file)
+
+        # Prepare chart data (use a helper function for clarity)
+        chart_data = prepare_chart_data(df)
+
+        return render_template('dashboard.html', chart_data=chart_data)
+
+    except FileNotFoundError as e:
+        return render_template('error.html', error_message=str(e))  # Dedicated error page
+    except (pd.errors.ParserError, KeyError) as e: # Catch specific Excel read errors
+        return render_template('error.html', error_message=f"Error processing Excel file: {e}")  # More informative error message
+    except Exception as e:
+        # Log unexpected errors for debugging (Important for security and maintenance)
+        app.logger.exception("An unexpected error occurred") # Use Flask's logger
+        return render_template('error.html', error_message="An unexpected error occurred. Please check logs.")  # Generic message to users
 
 
-    # Prepare chart data (Efficiency: Perform data processing once)
-    charts_data = {
-        "chart1": {
-            "labels": df['Column1'].tolist(),
-            "data": df['Column2'].tolist(),
-            "title": "Bar Chart Example"
-        },
-        "chart2": {
-            "labels": df['Column3'].tolist(),
-            "data": df['Column4'].tolist(),
-            "title": "Line Chart Example"
-        },
-        "chart3": {
-            "labels": df['Column5'].unique().tolist(),
-            "data": df.groupby('Column5')['Column6'].sum().tolist(),
-            "title": "Pie Chart Example"
+def prepare_chart_data(df):
+    """Helper function to prepare chart data from DataFrame."""
+    try:
+        return {
+            'chart1': {'labels': df['Category'].tolist(), 'data': df['Value'].tolist()},
+            'chart2': {'labels': df['Date'].dt.strftime('%Y-%m-%d').tolist(), 'data': df['Sales'].tolist()},
+            'chart3': {'labels': df['Product'].tolist(), 'values': df['Quantity'].tolist()},
         }
-    }
+    except KeyError as e:
+        raise KeyError(f"Missing column in Excel file: {e}") # Re-raise exception for handling by caller
 
-
-    return render_template('dashboard.html', charts_data=charts_data)
 
 
 if __name__ == '__main__':
-    app.run(debug=True)  # Set debug=False for production
+    app.run(debug=True) # Never set debug=True in production
