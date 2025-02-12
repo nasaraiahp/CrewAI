@@ -1,12 +1,12 @@
+<!-- templates/charts.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dashboard</title>
+    <title>Charts</title>
 </head>
 <body>
-    <h1>Dashboard</h1>
-    {% for chart in charts %}
-        {{ chart | safe }} <br>
-    {% endfor %}
+    <h1>Charts</h1>
+    <iframe src="{{ chart1 }}" width="800" height="600"></iframe><br>
+    <iframe src="{{ chart2 }}" width="800" height="600"></iframe>
 </body>
 </html>
