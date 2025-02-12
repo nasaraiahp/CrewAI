@@ -1,19 +1,13 @@
+<!-- templates/upload.html -->
 <!DOCTYPE html>
 <html>
 <head>
     <title>Upload Excel File</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <h1>Upload Excel File</h1>
-
-    {% if error %}
-        <p style="color: red;">{{ error }}</p>
-    {% endif %}
-
     <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <input type="submit" value="Upload">
+        <input type="file" name="file" accept=".xlsx, .xls"> <div class="upload-feedback"></div>        <input type="submit" value="Upload">
     </form>
 </body>
 </html>
