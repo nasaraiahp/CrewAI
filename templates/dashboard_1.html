@@ -1,13 +1,53 @@
-<!-- templates/upload.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Upload Excel File</title>
+    <title>Total Sales by Region</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <h1>Upload Excel File</h1>
-    <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xlsx, .xls"> <div class="upload-feedback"></div>        <input type="submit" value="Upload">
-    </form>
+    <canvas id="myChart"></canvas>
+    <script>
+        // Fetch data from server (using AJAX or fetch API - Example)
+        fetch('/get_sales_by_region') // Replace with your server endpoint
+            .then(response => response.json())
+            .then(data => {
+                const regions = data.map(item => item.Region);
+                const sales = data.map(item => item.TotalSales);
+
+                const ctx = document.getElementById('myChart').getContext('2d');
+                const myChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: regions,
+                        datasets: [{
+                            label: 'Total Sales',
+                            data: sales,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { // Add axis label
+                                    display: true,
+                                    text: 'Total Sales'
+                                }
+                             }
+                        },
+                         plugins: {
+                            title: { // Add chart title
+                                display: true,
+                                text: 'Total Sales by Region'
+                            }
+                        }
+                    }
+                });
+            })
+            .catch(error => console.error("Error fetching data:", error));
+
+    </script>
 </body>
 </html>
