@@ -3,95 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Excel Chart Generator</title>
+    <title>Excel Graph</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            padding-top: 5rem; /* Add some top padding for better spacing */
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <h1 class="mt-5">Excel Chart Generator</h1>
+        <h1>Excel Data Graph</h1>
 
-        <form method="POST" enctype="multipart/form-data" class="mt-4">
+        <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
-                <label for="file">Upload Excel File:</label>
-                <input type="file" class="form-control-file" id="file" name="file" accept=".xls, .xlsx">
+                <label for="file">Upload Excel File (.xlsx or .xls):</label>
+                <input type="file" class="form-control-file" name="file" id="file" accept=".xlsx, .xls">
             </div>
-
-
-            <div class="form-group">
-                <label for="x_axis">X-Axis:</label>
-                <select class="form-control" id="x_axis" name="x_axis">
-                    <option value="">Select Column</option> {% for col in column_names %}
-                    <option value="{{ col }}">{{ col }}</option> {% endfor %}
-
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="y_axis">Y-Axis:</label>
-                <select class="form-control" id="y_axis" name="y_axis">
-                    <option value="">Select Column</option>
-                    {% for col in column_names %}
-                    <option value="{{ col }}">{{ col }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-
-
-
-            <button type="submit" class="btn btn-primary">Generate Chart</button>
+            <button type="submit" class="btn btn-primary">Upload and Generate Graph</button>
         </form>
 
-        {% if error_message %}
-        <div class="alert alert-danger mt-3" role="alert">
-            {{ error_message }}
-        </div>
+        {% if error %}
+            <div class="alert alert-danger mt-3">{{ error }}</div>
         {% endif %}
 
-        <div class="mt-5">
-            <canvas id="myChart"></canvas>
-        </div>
+        {% if graph %}
+            <div class="mt-5">
+                {{ graph | safe }}
+            </div>
+        {% endif %}
+
     </div>
 
-    <script>
-        var chartData = {{ chart_data | safe }};
-                console.log(chartData)
-
-
-        if (chartData && chartData.labels && chartData.data) {
-
-             var chartType = chartData.chart_type || 'bar' // get chart type or use default
-
-            var ctx = document.getElementById('myChart').getContext('2d');
-            var myChart = new Chart(ctx, {
-                type: chartType,
-                data: {
-                    labels: chartData.labels,
-                    datasets: [{
-                        label: chartData.labels[0], // Customize the label
-                        data: chartData.data,
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
-        } else if (chartData && chartData.error) {
-            alert(chartData.error);
-        }
-
-
-    </script>
-
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </body>
 </html>
