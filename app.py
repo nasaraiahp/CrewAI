@@ -1,131 +1,57 @@
-from flask import Flask
+# app.py
 import dash
 from dash import dcc, html, Input, Output
 import plotly.express as px
-import pandas as pd
 import sqlite3
-from pathlib import Path  # For database file handling
+import pandas as pd
+from flask import Flask
+import os
 
-# Database Setup (Improved)
-DATABASE_FILE = Path(__file__).parent / "sales_data.db"  # More robust file path handling
+server = Flask(__name__)
+app = dash.Dash(__name__, server=server)
 
-def create_database(db_file):
-    """Creates the database and table if they don't exist."""
-    conn = sqlite3.connect(db_file)
-    cursor = conn.cursor()
+# Database Configuration (Best Practice: Use environment variables for sensitive data)
+DATABASE_URL = os.environ.get("DATABASE_URL", "sales_data.db")  # Default to sales_data.db if no env variable
 
+# SQL Query
+query = "SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category"
+
+# Function to read data from the database (better for managing connections)
+def get_sales_data(db_url):
+    conn = sqlite3.connect(db_url)
     try:
-        cursor.execute('''
-            CREATE TABLE sales (
-                date TEXT,
-                product TEXT,
-                category TEXT,
-                region TEXT,
-                sales REAL
-            )
-        ''')
-        # Example data insertion (Adapt as needed)
-        sample_data = [
-            ('2024-01-01', 'Product A', 'Electronics', 'North', 1200),
-            ('2024-01-01', 'Product B', 'Clothing', 'South', 850),
-            ('2024-01-02', 'Product A', 'Electronics', 'East', 1500),
-            # ... more sample data
-            ('2024-01-15', 'Product C', 'Furniture', 'West', 1100)
-        ]
-        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?, ?, ?)", sample_data)
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # Table already exists
-    finally:
+        df = pd.read_sql_query(query, conn)
+        return df
+    finally:  # Ensures the connection is closed even if errors occur.
         conn.close()
 
-
-# Create the database if it doesn't exist
-create_database(DATABASE_FILE)
-
-# Flask and Dash Setup
-server = Flask(__name__)
-app = dash.Dash(__name__, server=server, external_stylesheets=['/assets/style.css'])  # External stylesheet loading
+df = get_sales_data(DATABASE_URL)  # Get data outside the callback for better performance.
 
 
-# Layout (with improved structure for responsiveness)
-app.layout = html.Div([
-    html.H1("Sales Dashboard"),
+app.layout = html.Div(children=[
+    html.H1(children="Sales Dashboard"),
 
-    html.Div([
-        html.Div([  # Filter container
-            html.Label("Date Range:"),
-            dcc.DatePickerRange(
-                id='date-range',
-                start_date='2024-01-01',
-                end_date='2024-01-15',
-                min_date_allowed=df['date'].min(),  # Set date limits from data
-                max_date_allowed=df['date'].max(),
-                display_format='YYYY-MM-DD'  # Improve date display
-            ),
-            html.Label("Product:"),
-            dcc.Dropdown(id='product-filter', multi=True),
-            html.Label("Category:"),
-            dcc.Dropdown(id='category-filter', multi=True),
-            html.Label("Region:"),
-            dcc.Dropdown(id='region-filter', multi=True)
-        ], className='filter-container'),
+    dcc.Graph(id='bar-chart'),
 
-        html.Div([  # Chart container with responsive layout using flexbox
-            html.Div([dcc.Graph(id='sales-bar')], className="chart-item"),
-            html.Div([dcc.Graph(id='sales-line')], className="chart-item")
-        ], className="chart-container"),
-        dcc.Graph(id='sales-pie', className="chart-item") # Included in the responsive layout
-    ], className="dashboard-content"),
+    dcc.Graph(id='pie-chart'),
+
 
 ])
 
 
-# Callbacks (with improved efficiency and data handling)
 @app.callback(
-    [Output('sales-bar', 'figure'),
-     Output('sales-line', 'figure'),
-     Output('sales-pie', 'figure'),
-     Output('product-filter', 'options'),
-     Output('category-filter', 'options'),
-     Output('region-filter', 'options')],
-    [Input('date-range', 'start_date'),
-     Input('date-range', 'end_date'),
-     Input('product-filter', 'value'),
-     Input('category-filter', 'value'),
-     Input('region-filter', 'value')]
+    Output('bar-chart', 'figure'),
+    Output('pie-chart', 'figure'),
+    Input('bar-chart', 'id') # dummy input to trigger initial drawing - we'll improve this later.
 )
-def update_charts(start_date, end_date, selected_products, selected_categories, selected_regions):
-    # Database connection within the callback for better resource management
-    conn = sqlite3.connect(DATABASE_FILE)
-    try:
-        df = pd.read_sql_query("SELECT * FROM sales", conn)
-        df['date'] = pd.to_datetime(df['date'])
-    finally:
-        conn.close() #Ensure connection closes
+def update_charts(dummy_input):
+    # The data is already loaded globally so this callback is efficient now.
+    bar_fig = px.bar(df, x='product_category', y='total_sales', title="Sales by Product Category")
+    pie_fig = px.pie(df, values='total_sales', names='product_category', title="Sales Distribution")
+
+    return bar_fig, pie_fig
 
 
-    #Filtering (More efficient approach)
-    mask = (df['date'] >= start_date) & (df['date'] <= end_date)
-    if selected_products:
-        mask &= df['product'].isin(selected_products)
-    if selected_categories:
-        mask &= df['category'].isin(selected_categories)
-    if selected_regions:
-        mask &= df['region'].isin(selected_regions)
-    filtered_df = df[mask]
-
-    # ... (Rest of the chart creation code remains the same)
-
-    return bar_chart, line_chart, pie_chart, product_options, category_options, region_options
-
-
-
-# Define df here, accessible by app.layout and callbacks
-conn = sqlite3.connect(DATABASE_FILE)
-df = pd.read_sql_query("SELECT * FROM sales", conn) # dataframe available globally
-df['date'] = pd.to_datetime(df['date']) # Convert date column outside callback
-conn.close()
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)  # Disable debug mode in production
