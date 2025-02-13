@@ -1,83 +1,83 @@
 # app.py
 import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
+from dash import dcc, html, Input, Output, State
 import plotly.express as px
+import pandas as pd
 import sqlite3
-import pandas as pd  # Import pandas explicitly
 import os
 
-# Database setup (better practice to separate this)
-DB_PATH = os.path.join(os.getcwd(), 'sales_data.db')  # Use os.path.join
+# Database setup (Best practice: separate database interactions into a function)
+DATABASE_PATH = os.path.join(os.getcwd(), 'sales_data.db')  # Store the database in the current working directory
 
-def create_and_populate_db(db_path=DB_PATH):
+def create_and_populate_db(db_path=DATABASE_PATH):
+    """Creates and populates the database if it doesn't exist."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sales (
-            product TEXT,
-            category TEXT,
-            sales_amount REAL
+            product_name TEXT,
+            sales_amount REAL,
+            sales_region TEXT
         )
     ''')
-    # Use parameterized queries to prevent SQL injection (even with sample data)
-    data = [('Product A', 'Category 1', 1500),
-            ('Product B', 'Category 2', 2200),
-            ('Product C', 'Category 1', 1800),
-            ('Product D', 'Category 2', 1200)]
-    cursor.executemany("INSERT OR IGNORE INTO sales (product, category, sales_amount) VALUES (?, ?, ?)", data)
-    conn.commit()
+    # Check if table is empty before inserting default data (avoids duplicate entries on every run)
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:  # Insert data if table is empty
+        sample_data = [
+            ('Product A', 1500, 'North'),
+            ('Product B', 2200, 'East'),
+            ('Product C', 1800, 'West'),
+            ('Product A', 1200, 'South'),
+        ]
+        cursor.executemany("INSERT INTO sales (product_name, sales_amount, sales_region) VALUES (?, ?, ?)", sample_data)
+        conn.commit()
     conn.close()
 
-# Create and populate the database if it doesn't exist
-if not os.path.exists(DB_PATH): # check if database exists
-    create_and_populate_db()
 
+# Call this function once at app startup to ensure db exists and has the initial sample data if empty
+create_and_populate_db()
 
+# Dash app setup
+app = dash.Dash(__name__, external_stylesheets=['https://codepen.io/chriddyp/pen/bWLwgP.css'])
+server = app.server
 
-
-app = dash.Dash(__name__)
-server = app.server # This line is added to allow for deployment on platforms like Heroku
-
-
+# Layout
 app.layout = html.Div([
     html.H1("Sales Dashboard"),
-    dcc.Dropdown(
-        id='chart-type',
-        options=[
-            {'label': 'Bar Chart', 'value': 'bar'},
-            {'label': 'Pie Chart', 'value': 'pie'}
-        ],
-        value='bar',
-        style={'width': '300px'}
-    ),
-    dcc.Graph(id='sales-chart'),
 
+    html.Div([
+        dcc.Dropdown(
+            id='product-dropdown',
+            options=[{'label': i, 'value': i} for i in ['All'] + ['Product A', 'Product B', 'Product C']], # Get these from db ideally
+            value='All',
+            clearable=False,
+        ),
+        dcc.Graph(id='bar-chart'),
+    ]),
+
+    html.Div([
+        dcc.Graph(id='pie-chart'),
+    ])
 ])
 
-
+# Callbacks
 @app.callback(
-    Output('sales-chart', 'figure'),
-    Input('chart-type', 'value')
+    [Output('bar-chart', 'figure'), Output('pie-chart', 'figure')],
+    Input('product-dropdown', 'value')
 )
-def update_chart(chart_type):
-
-    conn = sqlite3.connect(DB_PATH) # consistent use of db path
+def update_charts(selected_product):
+    conn = sqlite3.connect(DATABASE_PATH)  # Use the constant
     try:
-        df = pd.read_sql_query("SELECT * from sales", conn)
+        df = pd.read_sql_query("SELECT * FROM sales", conn)
     finally:
-        conn.close() # Ensure connection closes even if error
+        conn.close()  # Always close the connection in a finally block
 
-    if chart_type == 'bar':
-        fig = px.bar(df, x='product', y='sales_amount', color='category', 
-                     title="Sales by Product and Category")
-    elif chart_type == 'pie':
-        fig = px.pie(df, values='sales_amount', names='category', title="Sales Distribution by Category")
-    else:
-        fig = {} # Return an empty figure as default
+    if selected_product != 'All':
+        df = df[df['product_name'] == selected_product]
 
-    return fig
+    bar_fig = px.bar(df, x='sales_region', y='sales_amount', color="product_name", title="Sales by Region")
+    pie_fig = px.pie(df, values='sales_amount', names='product_name', title="Sales Distribution by Product")
+    return bar_fig, pie_fig
 
 
 if __name__ == '__main__':
