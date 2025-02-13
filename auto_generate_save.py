@@ -1,76 +1,58 @@
-import os
 from flask import Flask, render_template, request, redirect, url_for
 import pandas as pd
+import os
+import plotly
 import plotly.express as px
-import plotly.io as pio
-import secrets
+import json
 import werkzeug
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'  # Secure file uploads
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Securely generate a secret key (important for production)
-app.secret_key = secrets.token_hex(16)
-
-
-# Set upload folder and allowed extensions
-UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
-# Create upload folder if it doesn't exist
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# Secure file naming
-def secure_filename(filename):
-    return werkzeug.utils.secure_filename(filename)
-
-
 def allowed_file(filename):
-    """Check if the file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    """Handles the main route for file upload and graph display."""
-    graph_html = None
-    error = None  # Store error messages
-
+@app.route("/", methods=["GET", "POST"])
+def upload_file():
     if request.method == 'POST':
         if 'file' not in request.files:
-            error = "No file part"
+            return render_template('index.html', error="No file part")
+        file = request.files['file']
+        if file.filename == '':
+            return render_template('index.html', error="No selected file")
+
+        if file and allowed_file(file.filename):
+            try:
+                filename = werkzeug.utils.secure_filename(file.filename) # Secure filename
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+
+                df = pd.read_excel(filepath)
+
+                # Graph 1: Employee Count vs. Location Name
+                loc_emp_count = df.groupby('Location Name')['Employee ID'].count().reset_index()
+                fig1 = px.bar(loc_emp_count, x='Location Name', y='Employee ID', title='Employee Count per Location')
+                graph1JSON = json.dumps(fig1, cls=plotly.utils.PlotlyJSONEncoder)
+
+                # Graph 2: Sum of Hours vs. Department
+                dept_hours = df.groupby('Department')['Hours'].sum().reset_index()
+                fig2 = px.bar(dept_hours, x='Department', y='Hours', title='Total Hours per Department')
+                graph2JSON = json.dumps(fig2, cls=plotly.utils.PlotlyJSONEncoder)
+
+                return render_template('index.html', graph1JSON=graph1JSON, graph2JSON=graph2JSON)
+
+            except Exception as e:
+                return render_template('index.html', error=f"An error occurred during processing: {e}")  # More specific error message
+
         else:
-            file = request.files['file']
-            if file.filename == '':
-                error = "No selected file"
-            elif not allowed_file(file.filename):
-                error = "File type not allowed. Please upload an Excel file (.xlsx or .xls)."
-            else:
-                try:
-                    filename = secure_filename(file.filename) # Secure the filename
-                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    file.save(filepath)
-                    df = pd.read_excel(filepath)
+            return render_template('index.html', error="Invalid file type. Please upload an Excel file.")
 
-                    # Example graph: Employee Count vs. Location Name (adapt as needed)
-                    if 'Location Name' in df.columns and 'Employee ID' in df.columns:
-                        location_counts = df.groupby('Location Name')['Employee ID'].count().reset_index()
-                        fig = px.bar(location_counts, x='Location Name', y='Employee ID',
-                                     title='Employee Count per Location')
-                        graph_html = pio.to_html(fig, full_html=False)
-                    else:
-                       error = "The Excel file must contain 'Location Name' and 'Employee ID' columns." 
-
-                except Exception as e:
-                    error = f"Error processing file: {e}"
-
-
-    # Pass the error or graph to the template outside the if block
-    return render_template('index.html', graph=graph_html, error=error)
-
-
-
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
