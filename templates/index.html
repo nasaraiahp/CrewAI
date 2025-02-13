@@ -3,37 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Excel Graph</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <title>Excel Data Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         body {
-            padding-top: 5rem; /* Add some top padding for better spacing */
+            font-family: sans-serif; /* Improve readability */
+        }
+        .chart-container {
+            width: 90%; /* Responsive width */
+            max-width: 800px; /* Set a maximum width */
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc; /* Add a border for better visual separation */
+            border-radius: 5px; /* Rounded corners */
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+
+        }
+        .chart {
+            height: 400px;
+           
+        }
+        @media (max-width: 600px) { /* Adjust for smaller screens as needed */
+            .chart-container{
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Excel Data Graph</h1>
+    <h1>Excel Data Visualization</h1>
 
-        <form method="POST" enctype="multipart/form-data">
-            <div class="form-group">
-                <label for="file">Upload Excel File (.xlsx or .xls):</label>
-                <input type="file" class="form-control-file" name="file" id="file" accept=".xlsx, .xls">
-            </div>
-            <button type="submit" class="btn btn-primary">Upload and Generate Graph</button>
-        </form>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xlsx, .xls"> <label for="file">Upload an excel file (.xlsx or .xls)</label>
+        <input type="submit" value="Upload">
+    </form>
 
-        {% if error %}
-            <div class="alert alert-danger mt-3">{{ error }}</div>
-        {% endif %}
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
 
-        {% if graph %}
-            <div class="mt-5">
-                {{ graph | safe }}
-            </div>
-        {% endif %}
 
-    </div>
+    {% if graph1JSON %}
+        <div class="chart-container">  <!-- Responsive container -->
+            <h2>Employee Count per Location</h2>
+            <div id="graph1" class="chart"></div>
+            <script>
+                Plotly.newPlot('graph1', {{graph1JSON | safe}});
+            </script>
+        </div>
+    {% endif %}
+
+    {% if graph2JSON %}
+         <div class="chart-container">  <!-- Responsive container -->
+            <h2>Total Hours per Department</h2>
+            <div id="graph2" class="chart"></div>
+            <script>
+                Plotly.newPlot('graph2', {{graph2JSON | safe}});
+            </script>
+         </div>
+    {% endif %}
 
 </body>
 </html>
