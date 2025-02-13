@@ -1,22 +1,17 @@
-# create_table.sql
-CREATE DATABASE IF NOT EXISTS sales_db;
-USE sales_db;
-
-CREATE TABLE IF NOT EXISTS sales (
-    Product_Id INT PRIMARY KEY,
-    Product_Name VARCHAR(255),
-    Price DECIMAL(10, 2),
-    Location_Name VARCHAR(255)
+CREATE TABLE Products (
+    ProductID INT PRIMARY KEY,
+    ProductName VARCHAR(100) UNIQUE,  -- Adjust length as needed
+    -- Other product details...
 );
 
-INSERT INTO sales (Product_Id, Product_Name, Price, Location_Name) VALUES
-    (1, 'Laptop', 1200, 'New York'),
-    (2, 'Mouse', 25, 'Los Angeles'),
-    (3, 'Keyboard', 75, 'Chicago'),
-    (4, 'Monitor', 300, 'New York'),
-    (5, 'Webcam', 50, 'Los Angeles'),
-    (6, 'Printer', 200, 'Chicago'),
-    (7, 'Tablet', 350, 'New York'),
-    (8, 'Smartphone', 1000, 'Houston'),
-    (9, 'Charger', 20, 'Miami'),
-    (10, 'Speaker', 150, 'Dallas');
+CREATE TABLE Sales (
+    SaleID INT PRIMARY KEY,
+    ProductID INT,
+    Quantity INT UNSIGNED, -- If quantities are never negative
+    Price DECIMAL(10, 2),
+    SaleDate DATE,
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
+
+CREATE INDEX idx_sales_saledate ON Sales (SaleDate);
+CREATE INDEX idx_sales_productid ON Sales (ProductID);
