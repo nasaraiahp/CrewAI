@@ -1,61 +1,30 @@
-# app.py
-import os
-from flask import Flask, render_template
-import mysql.connector
-from dotenv import load_dotenv
+import sqlite3
+import plotly.express as px
+import pandas as pd
 
-load_dotenv()  # Load environment variables
+# Database file name
+DATABASE_FILE = 'sales_data.db'
 
-app = Flask(__name__)
-
-# Get database credentials from environment variables
-DB_HOST = os.environ.get("DB_HOST")
-DB_USER = os.environ.get("DB_USER")
-DB_PASSWORD = os.environ.get("DB_PASSWORD")
-DB_NAME = os.environ.get("DB_NAME")
-
-def get_db_connection():
+# Function to generate and save the graph
+def generate_sales_graph(db_file):
     try:
-        mydb = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME
-        )
-        return mydb
-    except mysql.connector.Error as err:
-        print(f"Database connection error: {err}")
-        return None
+        # Use a context manager for database connection
+        with sqlite3.connect(db_file) as conn:
+            # Read data from the sales table
+            sales_df = pd.read_sql_query("SELECT * from sales", conn)
 
+        # Generate Price Count vs Location Name graph
+        location_price_count = sales_df.groupby('LocationName')['Price'].count().reset_index()
+        fig = px.bar(location_price_count, x='LocationName', y='Price', title='Price Count vs. Location Name')
 
-@app.route("/")
-def index():
-    mydb = get_db_connection()
-    if mydb:
-        try:
-            mycursor = mydb.cursor()
-            mycursor.execute("""
-                SELECT Location_Name, COUNT(*) AS Price_Count, AVG(Price) AS Average_Price
-                FROM sales
-                GROUP BY Location_Name;
-            """)
-            data = mycursor.fetchall()
-            labels = [row[0] for row in data]
-            counts = [row[1] for row in data]
-            average_prices = [row[2] for row in data]
-            return render_template("index.html", labels=labels, counts=counts, average_prices=average_prices)
+        # Save graph as HTML file
+        fig.write_html("price_count_by_location.html")
 
-        except mysql.connector.Error as err:
-            print(f"Database query error: {err}")
-            return "Database query error", 500
-        finally:
-            mycursor.close()
-            mydb.close() # Close the connection
-    else:
-        return "Database connection error", 500
+        print("Graph generated successfully!")
 
-
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
-    app.run(debug=False) #important change, change from True to False
+    generate_sales_graph(DATABASE_FILE)
