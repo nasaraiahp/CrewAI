@@ -1,47 +1,42 @@
-import os
-
 from flask import Flask, render_template
-import plotly.graph_objs as go
-from sqlalchemy import create_engine, text
-from sqlalchemy.pool import QueuePool
+import mysql.connector
+import json
+import os
 
 app = Flask(__name__)
 
-# Database URL environment variable (more secure)
-db_url = os.environ.get("DATABASE_URL")  # e.g., mysql+mysqlconnector://user:password@host:port/database
-
-if not db_url:
-    raise ValueError("DATABASE_URL environment variable not set")
-
-# Create a SQLAlchemy engine with connection pooling
-engine = create_engine(db_url, poolclass=QueuePool, pool_size=5, max_overflow=10, pool_pre_ping=True)
+# Get database credentials from environment variables
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = int(os.environ.get("DB_PORT", 3306))
+DB_USER = os.environ.get("DB_USER", "root")  # Default to root for local testing ONLY. NEVER in production.
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "nasa") # Extremely insecure default. Change this immediately!
+DB_NAME = os.environ.get("DB_NAME", "sales_db")
 
 
-@app.route("/")
+@app.route('/')
 def index():
     try:
-        with engine.connect() as connection:
-            # Use parameterized query to prevent SQL injection
-            query = text("SELECT LocationName, COUNT(*) AS PriceCount FROM sales GROUP BY LocationName")
-            result = connection.execute(query)
+        mydb = mysql.connector.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME
+        )
+        mycursor = mydb.cursor()
+        mycursor.execute("SELECT LocationName, COUNT(*) AS PriceCount FROM sales GROUP BY LocationName")
+        data = mycursor.fetchall()
+        labels = [row[0] for row in data]
+        values = [row[1] for row in data]
+        return render_template('index.html', labels=json.dumps(labels), values=json.dumps(values))
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")  # Log the error for debugging
+        return "Database error", 500 # Return a 500 error to the client
+    finally:
+        if 'mydb' in locals() and mydb.is_connected():
+            mycursor.close()
+            mydb.close()
 
-            data = result.fetchall()  # Fetch all results at once for efficiency
-            location_names = [row.LocationName for row in data]
-            price_counts = [row.PriceCount for row in data]
 
-        # Create the Plotly bar graph
-        fig = go.Figure(data=[go.Bar(x=location_names, y=price_counts)])
-        fig.update_layout(title="Price Count by Location", xaxis_title="Location Name", yaxis_title="Price Count")
-        graphJSON = fig.to_json()
-
-        return render_template("index.html", graphJSON=graphJSON)
-
-    except Exception as e:
-        # Log the error for debugging (don't display it directly in production)
-        print(f"Error: {e}")  # Or use a proper logging library
-        return "An error occurred", 500  # Return a generic error message to the user
-
-
-
-if __name__ == "__main__":
-    app.run(debug=False)  # Disable debug mode in production
+if __name__ == '__main__':
+    app.run(debug=True) # Never set debug=True in production
