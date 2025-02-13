@@ -1,62 +1,47 @@
-from flask import Flask, render_template, request
-import pandas as pd
-import plotly.express as px
-import sqlite3
 import os
+
+from flask import Flask, render_template
+import plotly.graph_objs as go
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import QueuePool
 
 app = Flask(__name__)
 
-# Database configuration (better practice to store outside the main code)
-DATABASE = os.path.join(app.instance_path, 'sales.db')  # Store DB in instance folder
+# Database URL environment variable (more secure)
+db_url = os.environ.get("DATABASE_URL")  # e.g., mysql+mysqlconnector://user:password@host:port/database
 
-# Create the instance folder if it doesn't exist
-if not os.path.exists(app.instance_path):
-    os.makedirs(app.instance_path)
+if not db_url:
+    raise ValueError("DATABASE_URL environment variable not set")
 
-
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+# Create a SQLAlchemy engine with connection pooling
+engine = create_engine(db_url, poolclass=QueuePool, pool_size=5, max_overflow=10, pool_pre_ping=True)
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/")
 def index():
-    conn = get_db_connection()
-    sales_data = pd.DataFrame() # Initialize as empty DataFrame
-    graphJSON = None
     try:
-        if request.method == 'POST': # Handle data upload
-            file = request.files['file']
-            if file:
-                sales_data = pd.read_csv(file)  # Read from CSV
+        with engine.connect() as connection:
+            # Use parameterized query to prevent SQL injection
+            query = text("SELECT LocationName, COUNT(*) AS PriceCount FROM sales GROUP BY LocationName")
+            result = connection.execute(query)
 
-                # Sanitize/validate the data before inserting into the database
-                # ... (Add data validation logic here based on your specific requirements,
-                # e.g., check data types, remove illegal characters, etc.)
+            data = result.fetchall()  # Fetch all results at once for efficiency
+            location_names = [row.LocationName for row in data]
+            price_counts = [row.PriceCount for row in data]
 
-                sales_data.to_sql('sales', conn, if_exists='replace', index=False) # Replace table data
+        # Create the Plotly bar graph
+        fig = go.Figure(data=[go.Bar(x=location_names, y=price_counts)])
+        fig.update_layout(title="Price Count by Location", xaxis_title="Location Name", yaxis_title="Price Count")
+        graphJSON = fig.to_json()
 
-
-        # Query the database (only after potential upload)
-        sales_data = pd.read_sql_query("SELECT Price, `Location Name`, `Product Name`, `Product ID` FROM sales", conn)
-
-
-        if not sales_data.empty:
-             fig = px.histogram(sales_data, x="Location Name", y="Price", title="Price Distribution by Location")
-             graphJSON = fig.to_json()
-
+        return render_template("index.html", graphJSON=graphJSON)
 
     except Exception as e:
-        print(f"Error: {e}")  # Log the error for debugging
-        return render_template('error.html', error_message=str(e))
-
-    finally:
-        conn.close()
-
-    return render_template('index.html', graphJSON=graphJSON)
+        # Log the error for debugging (don't display it directly in production)
+        print(f"Error: {e}")  # Or use a proper logging library
+        return "An error occurred", 500  # Return a generic error message to the user
 
 
 
-if __name__ == '__main__':
-    app.run(debug=True)  # Set debug=False in production!
+if __name__ == "__main__":
+    app.run(debug=False)  # Disable debug mode in production
