@@ -1,25 +1,16 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Sales Data Visualization</title>
+    <meta charset="UTF-8">
+    <title>Sales Graph</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Insights</h1>
-
-    <form method="POST" enctype="multipart/form-data">  <!-- File upload form -->
-        <input type="file" name="file">
-        <input type="submit" value="Upload">
-    </form>
-
-    <div id="graph"></div>  <!-- Graph will be rendered here -->
-
+    <h1>Sales Data Visualization</h1>
+    <div id="graph"></div>
     <script>
-        {% if graphJSON %}  <!-- Check if graph data exists -->
-            var graphJSON = {{ graphJSON | safe }};
-            Plotly.newPlot('graph', JSON.parse(graphJSON));
-        {% endif %}
+        var graphData = {{graphJSON | safe}};
+        Plotly.newPlot('graph', graphData); // Use Plotly.newPlot
     </script>
 </body>
 </html>
