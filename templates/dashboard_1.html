@@ -1,16 +1,48 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Sales Graph</title>
+    <title>Sales Analysis</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Data Visualization</h1>
-    <div id="graph"></div>
+    <h1>Sales Analysis by Location</h1>
+
+    <div id="price-count-chart"></div>
+
     <script>
-        var graphData = {{graphJSON | safe}};
-        Plotly.newPlot('graph', graphData); // Use Plotly.newPlot
+        var labels = {{ labels | safe }};
+        var counts = {{ counts | safe }};
+        var average_prices = {{ average_prices | safe }};
+
+        var priceCountTrace = {
+            x: labels,
+            y: counts,
+            type: 'bar',
+            name: 'Price Count'
+        };
+
+        var averagePriceTrace = {  // New trace for average price
+            x: labels,
+            y: average_prices,
+            type: 'scatter',
+            name: 'Average Price',
+            yaxis: 'y2'  // Use secondary y-axis
+        };
+
+        var data = [priceCountTrace, averagePriceTrace];
+
+        var layout = {
+            barmode: 'group',
+            title: 'Price Count and Average Price by Location',
+            yaxis: {title: 'Count'},
+            yaxis2: {  // Configuration for secondary y-axis
+                title: 'Average Price',
+                overlaying: 'y',
+                side: 'right'
+            }
+        };
+
+        Plotly.newPlot('price-count-chart', data, layout);
     </script>
 </body>
 </html>
