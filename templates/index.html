@@ -1,70 +1,31 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Excel Chart Generator</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Location Analysis</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <style>
-        .chart-container {
-            width: 90%; /* Make charts slightly smaller */
-            max-width: 900px;
-            margin: 20px auto;
-            height: 400px; /* Consistent height */
-             overflow: auto; /* Add scrollbars if chart content overflows */
-
-        }
-        /* Style for the indicator chart to center it */
-        .indicator-chart {
-            display: flex;
-            justify-content: center; /* Horizontally center */
-            align-items: center;    /* Vertically center */
-            height: 100%;
-        }
-        @media (max-width: 768px) { /* Adjust for smaller screens */
-            .chart-container {
-                height: 300px; /* Reduce height on smaller screens if needed */
-            }
-        }
-
-
-    </style>
 </head>
 <body>
+    <div class="container mt-5">
+        <h1>Employee Location Analysis</h1>
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">Upload Excel File (.xls, .xlsx):</label>
+                <input type="file" class="form-control-file" name="file" id="file" accept=".xls, .xlsx">
+            </div>
+            <button type="submit" class="btn btn-primary">Upload and Analyze</button>
+        </form>
 
-<div class="container">
-    <h1>Excel Chart Generator</h1>
+        {% if error %}
+        <div class="alert alert-danger mt-3">{{ error }}</div>
+        {% endif %}
 
-    {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
-
-    <form method="POST" enctype="multipart/form-data">
-        <div class="form-group">
-            <label for="file">Choose Excel file (xlsx, xls):</label> <br>  </div>
-            <input type="file" class="form-control-file" id="file" name="file" accept=".xlsx, .xls"> </div> <br>
-        <button type="submit" class="btn btn-primary">Generate Charts</button>
-    </form>
-
-      <div class="chart-container">
-    {% if chart1 %}
-         {{ chart1 | safe }}
-    {% endif %}
-    </div>
-
-    <div class="chart-container">
-        {% if chart2 %}
-             {{ chart2 | safe }}
+        {% if graph %}
+        <div class="mt-5">
+            {{ graph | safe }}
+        </div>
         {% endif %}
     </div>
-
-    <div class="chart-container indicator-chart">  </div> <div class="chart-container">
-        {% if chart3 %}
-             {{ chart3 | safe }}
-        {% endif %}
-    </div>
-
-</div>
-
-
-
 </body>
 </html>
