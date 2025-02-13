@@ -1,60 +1,92 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, jsonify
 import pandas as pd
-import plotly.express as px
 import os
+import json
 import werkzeug
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB file size limit
+# Secure way to generate secret key (Do this ONLY ONCE and store it securely)
+# import secrets
+# app.secret_key = secrets.token_hex(16)  # Store this securely!
+app.secret_key = os.environ.get("SECRET_KEY") or "your-secret-key"  # for now
 
+
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/', methods=['GET', 'POST'])
+def create_chart_data(df):
+    """Generates chart data from the DataFrame."""
+    try:
+        # More flexible chart data generation:
+        chart_type = request.form.get('chart_type', 'bar')  # Default to bar chart
+        x_axis = request.form.get('x_axis') # No default value, it is mandatory
+        y_axis = request.form.get('y_axis') #No default value, it is mandatory
+
+        if not x_axis or not y_axis:
+            return jsonify({'error': "X-axis and Y-axis must be selected."})
+
+
+        if chart_type in ['bar', 'line']: #only sum aggregation supported for simplicity for now
+            grouped_data = df.groupby(x_axis)[y_axis].sum().reset_index()
+        else:  #other chart types not implemented for now
+             return jsonify({'error': f"Chart type {chart_type} not yet supported"})
+
+        labels = grouped_data[x_axis].tolist()
+        data = grouped_data[y_axis].tolist()
+        return jsonify({'labels': labels, 'data': data, 'chart_type': chart_type})
+
+
+    except KeyError as e:
+        return jsonify({'error': f"Column not found: {e}"})
+    except Exception as e:
+        app.logger.error(f"Error creating chart data: {e}")  # Log the error
+        return jsonify({'error': "An unexpected error occurred."}) # do not return raw error
+
+
+@app.route("/", methods=["GET", "POST"])
 def index():
+    chart_data = None
+    error_message = None
+
     if request.method == 'POST':
         if 'file' not in request.files:
-            return render_template('index.html', error="No file part")
-
-        file = request.files['file']
-        if file.filename == '':
-            return render_template('index.html', error="No selected file")
-
-        if file and allowed_file(file.filename):
-            try:
-                filename = werkzeug.utils.secure_filename(file.filename) # Sanitize filename
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(filepath)
-
-                df = pd.read_excel(filepath)
-                location_counts = df.groupby('Location Name')['Employee ID'].count().reset_index()
-                location_counts.columns = ['Location Name', 'Employee Count']
-
-                fig = px.bar(location_counts, x='Location Name', y='Employee Count',
-                             title='Employee Count by Location',
-                             labels={'Employee Count': 'Number of Employees'})
-                graph_html = fig.to_html(full_html=False)
-                return render_template('index.html', graph=graph_html)
-
-            except (pd.errors.ParserError, ValueError) as e:  # Catch specific Excel read errors
-                return render_template('index.html', error=f"Invalid Excel file: {e}")
-            except Exception as e:
-                return render_template('index.html', error=f"Error processing file: {e}")  # Handle other potential errors
-
-
+            error_message = "No file part"
         else:
-             return render_template('index.html', error="File type not allowed. Please upload .xls or .xlsx")
+            file = request.files['file']
+            if file.filename == '':
+                error_message = "No selected file"
+            elif not allowed_file(file.filename):
+                error_message = "File type not allowed. Please upload an Excel file (.xls or .xlsx)."
+            else:
+                try:
+                    filename = werkzeug.utils.secure_filename(file.filename) # Sanitize filename!
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    file.save(filepath)
+                    df = pd.read_excel(filepath)
+                    chart_data = create_chart_data(df)
+                except Exception as e:
+                    app.logger.error(f"Error processing file: {e}")  # Log the error
+                    error_message = "An error occurred while processing the file." # generic error for users
+
+    # Get column names for dropdown selection from sample dataframe of user upload (if available)
+    column_names = []
+
+    if chart_data and 'labels' in chart_data.json:
+         # get column names from dataframe on first upload to show in x/y axis selectors
+        first_row = df.iloc[0].to_dict() # get column names from data
+        column_names = list(first_row.keys())
+
+    return render_template("index.html", chart_data=chart_data, error_message=error_message, column_names=column_names)
 
 
-    return render_template('index.html')
 
-
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    app.run(debug=True) # NEVER set debug=True in production
