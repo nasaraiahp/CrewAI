@@ -1,81 +1,117 @@
-# app/app.py
-import os
-from flask import Flask, render_template, request, jsonify
+# app.py
 import sqlite3
+import dash
+from dash import dcc
+from dash import html
+from dash.dependencies import Input, Output
+import plotly.express as px
 import pandas as pd
-import json
+from flask_caching import Cache
 
-app = Flask(__name__)
+# Configuration (consider moving to a separate config file or environment variables)
+DATABASE_FILE = "sales_data.db"  # Avoid hardcoding paths
+DEBUG_MODE = False  # Set to False for production
 
-# Database setup
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+# Cache settings (improve performance for repeated queries)
+CACHE_CONFIG = {
+    "CACHE_TYPE": "filesystem",  # Consider Redis or Memcached for production
+    "CACHE_DIR": "cache_directory"  # Specify a directory for caching
+}
 
-def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row # Access data by name
-    return conn
-
-def init_db():
-    with app.app_context():  # Ensures correct context for db access
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:  # Schema in separate file
-            db.cursor().executescript(f.read())
-        db.commit()
-
-# Initialize the database if it doesn't exist
-if not os.path.exists(DATABASE):
-    os.makedirs(app.instance_path, exist_ok=True)  # Create instance folder if needed
-    init_db()
+# Create the Dash app
+app = dash.Dash(__name__)
+cache = Cache()
+cache.init_app(app.server, config=CACHE_CONFIG)
 
 
-def insert_dummy_data():  # Separate function for data insertion
-    with app.app_context():
-        db = get_db()
-        dummy_data = [
-            ('Product A', 'Electronics', 100, 5000),
-            ('Product B', 'Clothing', 150, 3000),
-            ('Product C', 'Electronics', 50, 2500),
-            ('Product D', 'Clothing', 200, 4000),
-            ('Product E', 'Books', 75, 1500)
-        ]
-        db.executemany("INSERT OR IGNORE INTO sales VALUES (?, ?, ?, ?)", dummy_data)
-        db.commit()
-
-# Call insert_dummy_data only if the table is empty
-with app.app_context():
-    db = get_db()
-    if db.execute("SELECT COUNT(*) FROM sales").fetchone()[0] == 0:
-        insert_dummy_data()
+# Database connection function (using context manager for proper closing)
+def get_db_connection():
+    try:
+        conn = sqlite3.connect(DATABASE_FILE)
+        return conn
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        return None
 
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+# Initialize database and populate if empty
+def initialize_database():
+    conn = get_db_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales (
+                region TEXT,
+                product TEXT,
+                sales INTEGER
+            )
+        ''')
+
+        # Check if the table is empty before inserting sample data
+        cursor.execute("SELECT COUNT(*) FROM sales")
+        if cursor.fetchone()[0] == 0:
+            sample_data = [
+                ('North', 'Product A', 1200),
+                ('North', 'Product B', 850),
+                ('East', 'Product A', 1500),
+                ('East', 'Product B', 1100),
+                ('South', 'Product A', 900),
+                ('South', 'Product B', 700),
+                ('West', 'Product A', 1000),
+                ('West', 'Product B', 950),
+            ]
+            cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
+            conn.commit()
+        conn.close()
 
 
-@app.route('/data')
-def get_data():
-    with app.app_context():
-        db = get_db()
-        df = pd.read_sql_query("SELECT * from sales", db)
-        # No need to explicitly close db connection when using 'with'
+# Call the database initialization function
+initialize_database()
 
-        # Using list comprehensions for better efficiency
-        sales_by_product = {row['product']: row['sales_amount'] for row in db.execute("SELECT product, SUM(sales_amount) as sales_amount FROM sales GROUP BY product").fetchall()}
-        sales_by_category = {row['category']: row['sales_amount'] for row in db.execute("SELECT category, SUM(sales_amount) as sales_amount FROM sales GROUP BY category").fetchall()}
+# Layout of the app
+app.layout = html.Div([
+    html.H1("Sales Dashboard"),
+    dcc.Dropdown(
+        id='product-dropdown',
+        options=[],  # Options will be populated dynamically
+        value=None  # Start with no initial value
+    ),
+    dcc.Graph(id='bar-chart'),
+    dcc.Graph(id='pie-chart')
+])
 
-        return jsonify({
-            'salesByProduct': sales_by_product,
-            'salesByCategory': sales_by_category
-        })
+# Callback to populate the dropdown and update charts
 
 
-# app/schema.sql
-DROP TABLE IF EXISTS sales;
+@app.callback(
+    [Output('product-dropdown', 'options'),
+     Output('bar-chart', 'figure'),
+     Output('pie-chart', 'figure')],
+    [Input('product-dropdown', 'value')]
+)
+@cache.memoize(timeout=60)  # Cache results for 60 seconds
+def update_charts(selected_product):
+    conn = get_db_connection()
+    if not conn:
+        return [], {}, {} # Return empty figures if no database connection
 
-CREATE TABLE sales (
-    product TEXT,
-    category TEXT,
-    sales_quantity INTEGER,
-    sales_amount REAL
-);
+    # Query for available products
+    products = pd.read_sql_query("SELECT DISTINCT product FROM sales", conn)
+    dropdown_options = [{'label': p, 'value': p} for p in products['product']]
+
+    if selected_product:
+        df = pd.read_sql_query("SELECT * FROM sales WHERE product = ?", conn, params=(selected_product,))
+    else:
+        df = pd.DataFrame()  # Empty dataframe if no product selected
+
+
+    conn.close()
+
+    bar_fig = px.bar(df, x='region', y='sales', title=f'Sales by Region for {selected_product or "All Products"}')
+    pie_fig = px.pie(df, values='sales', names='region', title=f'Sales Distribution for {selected_product or "All Products"}')
+
+    return dropdown_options, bar_fig, pie_fig
+
+
+if __name__ == '__main__':
+    app.run_server(debug=DEBUG_MODE)
