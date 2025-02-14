@@ -1,105 +1,83 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
+# app.py (Flask backend)
+from flask import Flask, render_template, jsonify
 import sqlite3
-from flask import Flask, render_template
 import os
 
-# --- Configuration ---
-DATABASE_PATH = os.path.join(os.path.dirname(__file__), "sales_data.db")  # Store DB in the same directory
-SAMPLE_DATA = [
-    ('Product A', 'Electronics', 1500),
-    ('Product B', 'Clothing', 800),
-    ('Product C', 'Electronics', 1200),
-    ('Product D', 'Books', 500),
-    ('Product E', 'Clothing', 900),
-]
-
-
-# --- Database Management ---
-def create_connection(db_file):
-    """Creates a database connection to the SQLite database specified by db_file."""
-    conn = None
-    try:
-        conn = sqlite3.connect(db_file)
-        return conn
-    except sqlite3.Error as e:
-        st.error(f"Database connection error: {e}")
-        return None
-
-def create_table(conn):
-    """Creates the sales table if it doesn't exist."""
-    try:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sales (
-                product TEXT,
-                category TEXT,
-                sales_amount REAL
-            )
-        ''')
-        conn.commit()
-    except sqlite3.Error as e:
-        st.error(f"Error creating table: {e}")
-
-
-def insert_sample_data(conn, data):
-    """Inserts sample data into the sales table if it's empty."""
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM sales")
-        if cursor.fetchone()[0] == 0:  # Check if table is empty
-            cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", data)
-            conn.commit()
-    except sqlite3.Error as e:
-        st.error(f"Error inserting sample data: {e}")
-
-
-# --- Flask setup (if needed for more complex backend operations later) ---
 app = Flask(__name__)
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+
+def get_db_connection():
+    """Establishes a connection to the database."""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # Access data by column name
+    return conn
+
+def init_db():
+    """Initializes the database and creates the sales table."""
+    with app.app_context():  # Access app context for instance path
+        conn = get_db_connection()
+        with app.open_resource('schema.sql', mode='r') as f:
+            conn.cursor().executescript(f.read())
+        conn.commit()
+        conn.close()
+
+# Check if the instance folder exists and create if not.
+try:
+    os.makedirs(app.instance_path)
+except OSError:
+    pass
+
+# Initialize database if it doesn't exist.
+if not os.path.exists(DATABASE):
+    init_db()
+
+def insert_dummy_data():
+    """Inserts dummy data into the sales table if it's empty."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:
+        dummy_data = [
+            ('Product A', 'Electronics', 100, 5000.00),
+            ('Product B', 'Clothing', 50, 2500.00),
+            ('Product C', 'Electronics', 75, 3750.00),
+            ('Product D', 'Books', 120, 2400.00),
+            ('Product E', 'Clothing', 90, 4500.00),
+        ]
+        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?, ?)", dummy_data)
+        conn.commit()
+    conn.close()
+
 
 @app.route('/')
 def index():
-    return render_template("index.html")
+    insert_dummy_data() # Ensure dummy data exists before rendering the template
+    return render_template('index.html')
 
-# --- Streamlit App ---
-st.title("Sales Dashboard")
+@app.route('/data')
+def get_data():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT product, sales_quantity, category, sales_revenue FROM sales")
+    rows = cursor.fetchall()
+    conn.close()
 
-# --- Data Loading and Caching ---
-@st.cache_data  # Cache the data
-def load_data(conn):
-    df = pd.read_sql_query("SELECT * from sales", conn)
-    return df
+    # Improved data handling using dictionary comprehension and list comprehension
+    data = {
+        'products': [row['product'] for row in rows],
+        'sales_quantities': [row['sales_quantity'] for row in rows],
+        'categories': list({row['category'] for row in rows}),  # Efficiently get unique categories
+        'sales_revenues_by_category': {}  # Aggregate revenue by category
+    }
 
-# --- Database initialization happens outside cached function ---
-conn = create_connection(DATABASE_PATH)
-if conn:
-    create_table(conn)
-    insert_sample_data(conn, SAMPLE_DATA)
-    df = load_data(conn)   # Call after the table has been populated
-    conn.close()  # Close connection after loading
+    # Aggregate revenue by category efficiently using a loop
+    for row in rows:
+        category = row['category']
+        revenue = row['sales_revenue']
+        data['sales_revenues_by_category'][category] = data['sales_revenues_by_category'].get(category, 0) + revenue
 
-
-# --- Visualization ---
-if df is not None: # Check if the dataframe was loaded
-    st.subheader("Sales by Product")
-    fig_bar = px.bar(df, x='product', y='sales_amount', color='category')
-    st.plotly_chart(fig_bar)
-
-    st.subheader("Sales Distribution by Category")
-    category_sales = df.groupby('category')['sales_amount'].sum().reset_index()
-    fig_pie = px.pie(category_sales, values='sales_amount', names='category')
-    st.plotly_chart(fig_pie)
-else:
-    st.error("Could not load sales data.")  # Informative message
+    return jsonify(data)  # Return JSON data
 
 
-# Streamlit app run (if not using Flask)
-if __name__ == '__main__' and not st._is_running_with_streamlit:  # Check Streamlit context
-    st.set_option('server.headless', True)
-    st.run()
-
-
-# --- Uncomment to serve via Flask ---
-# if __name__ == '__main__':
-#     app.run(debug=True)
+if __name__ == '__main__':
+    app.run(debug=True)
