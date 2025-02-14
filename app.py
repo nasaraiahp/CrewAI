@@ -1,62 +1,49 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, g
 import sqlite3
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
 import io
 import base64
-import pandas as pd
 import os
 
 app = Flask(__name__)
-DATABASE = 'sales_data.db'  # Define database name globally
-
-# Database setup (create and populate if it doesn't exist)
-def get_db_connection():
-    """Establishes a connection to the database."""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Access data by column name
-    return conn
-
-def create_table():
-    """Creates the sales table if it doesn't exist."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sales (
-                product TEXT,
-                category TEXT,
-                sales_quantity INTEGER,
-                sales_amount REAL
-            )
-        ''')
-
-def insert_dummy_data():
-    """Inserts dummy data if the table is empty."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM sales")
-        if cursor.fetchone()[0] == 0:
-            dummy_data = [
-                ('Product A', 'Electronics', 100, 5000),
-                ('Product B', 'Clothing', 50, 2500),
-                ('Product C', 'Electronics', 75, 3750),
-                ('Product D', 'Clothing', 120, 6000),
-                ('Product E', 'Books', 200, 4000),
-                ('Product F', 'Books', 80, 1600),
-                ('Product G', 'Electronics', 60, 3000)
-            ]
-            cursor.executemany("INSERT INTO sales VALUES (?, ?, ?, ?)", dummy_data)
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+app.config['SECRET_KEY'] = os.urandom(24) # Important for session security in Flask
 
 
-# Initialize database on app startup
-@app.before_first_request
+def get_db():
+    """Establishes a database connection if one doesn't exist."""
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row  # Access data by column name
+    return db
+
+
+@app.teardown_appcontext
+def close_connection(exception):
+    """Closes the database connection after each request."""
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+
 def init_db():
-    """Initializes the database on the first request."""
-    create_table()
-    insert_dummy_data()
+    """Initializes the database using the schema.sql file."""
+    with app.app_context():  # Ensures application context for database operations
+        db = get_db()
+        with app.open_resource('schema.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
 
-# ... (rest of the code remains largely the same, but uses get_db_connection())
+# For local development, create the instance folder if it doesn't exist
+if not os.path.exists(app.instance_path):
+    os.makedirs(app.instance_path)
+
+# Initialize the database on startup (ensure this is not run in production if the db already exists and has data)
+init_db()
+
+
+# Routes
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -64,16 +51,22 @@ def index():
 
 @app.route("/bar_chart")
 def bar_chart():
-    with get_db_connection() as conn:
-        df = pd.read_sql_query("SELECT product, sales_quantity FROM sales", conn)
+    db = get_db()
+    data = db.execute("SELECT product, sales_amount FROM sales").fetchall()
+    products = [row['product'] for row in data]  # Access data by column name
+    sales = [row['sales_amount'] for row in data]
 
-    # ... (plotting code remains the same)
+    # ... (rest of the chart generation code remains the same)
+
 
 @app.route("/pie_chart")
 def pie_chart():
-    with get_db_connection() as conn:
-        df = pd.read_sql_query("SELECT category, SUM(sales_amount) AS total_sales FROM sales GROUP BY category", conn)
-    # ... (plotting code remains the same)
+    db = get_db()
+    data = db.execute("SELECT product, sales_amount FROM sales").fetchall()
+    products = [row['product'] for row in data]
+    sales = [row['sales_amount'] for row in data]
+
+    # ... (rest of the chart generation code remains the same)
 
 
 
