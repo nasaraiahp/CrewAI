@@ -1,13 +1,37 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
     <title>Sales Dashboard</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script> 
 </head>
 <body>
-    <div id="root"></div>  <!-- Correct placement of the root div -->
-    {% assets "app_assets" %}  <!-- If using Flask with assets -->
-        <script type="text/javascript" src="{{ ASSET_URL }}"></script>
-    {% endassets %}
+    <h1>Sales Dashboard</h1>
+
+    <div id="bar-chart"></div>
+    <div id="pie-chart"></div>
+
+    <script>
+        fetch('/data')
+        .then(response => response.json())
+        .then(data => {
+            // Bar chart
+            var barData = [{
+                x: data.products,
+                y: data.sales_quantities,
+                type: 'bar'
+            }];
+            Plotly.newPlot('bar-chart', barData);
+
+            // Pie chart (using aggregated revenue by category)
+            var pieData = [{
+                labels: Object.keys(data.sales_revenues_by_category),
+                values: Object.values(data.sales_revenues_by_category),
+                type: 'pie'
+            }];
+            Plotly.newPlot('pie-chart', pieData);
+
+        });
+    </script>
 </body>
 </html>
