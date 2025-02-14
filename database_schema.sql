@@ -1,24 +1,12 @@
-CREATE TABLE sales (
-    Price REAL,
-    LocationName TEXT,
-    ProductName TEXT,
-    ProductID INTEGER PRIMARY KEY AUTOINCREMENT -- Added primary key and autoincrement
+-- schema.sql
+CREATE TABLE IF NOT EXISTS sales (
+    product TEXT NOT NULL,
+    sales_amount REAL NOT NULL
 );
 
-INSERT INTO sales (Price, LocationName, ProductName) VALUES -- Removed ProductID from insert to utilize autoincrement
-(10.5, 'New York', 'Laptop'),
-(25, 'London', 'Tablet'),
-(15, 'New York', 'Mouse'),
-(30, 'Paris', 'Keyboard'),
-(20, 'London', 'Monitor'),
-(12, 'New York', 'Webcam'),
-(35, 'Paris', 'Printer'),
-(18, 'London', 'Charger'),
-(22, 'New York', 'Speaker'),
-(28, 'Paris', 'Headset');
-
-
--- Example query for plotting Price Count vs. Location Name:
-SELECT LocationName, COUNT(*) AS PriceCount
-FROM sales
-GROUP BY LocationName;
+INSERT OR IGNORE INTO sales (product, sales_amount) VALUES
+('Product A', 1500),
+('Product B', 2200),
+('Product C', 1800),
+('Product D', 2500),
+('Product E', 1200);
