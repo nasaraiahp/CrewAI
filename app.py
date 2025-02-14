@@ -1,74 +1,105 @@
-from flask import Flask, render_template, request, g
+import streamlit as st
+import pandas as pd
+import plotly.express as px
 import sqlite3
-import matplotlib.pyplot as plt
-import io
-import base64
+from flask import Flask, render_template
 import os
 
+# --- Configuration ---
+DATABASE_PATH = os.path.join(os.path.dirname(__file__), "sales_data.db")  # Store DB in the same directory
+SAMPLE_DATA = [
+    ('Product A', 'Electronics', 1500),
+    ('Product B', 'Clothing', 800),
+    ('Product C', 'Electronics', 1200),
+    ('Product D', 'Books', 500),
+    ('Product E', 'Clothing', 900),
+]
+
+
+# --- Database Management ---
+def create_connection(db_file):
+    """Creates a database connection to the SQLite database specified by db_file."""
+    conn = None
+    try:
+        conn = sqlite3.connect(db_file)
+        return conn
+    except sqlite3.Error as e:
+        st.error(f"Database connection error: {e}")
+        return None
+
+def create_table(conn):
+    """Creates the sales table if it doesn't exist."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales (
+                product TEXT,
+                category TEXT,
+                sales_amount REAL
+            )
+        ''')
+        conn.commit()
+    except sqlite3.Error as e:
+        st.error(f"Error creating table: {e}")
+
+
+def insert_sample_data(conn, data):
+    """Inserts sample data into the sales table if it's empty."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM sales")
+        if cursor.fetchone()[0] == 0:  # Check if table is empty
+            cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", data)
+            conn.commit()
+    except sqlite3.Error as e:
+        st.error(f"Error inserting sample data: {e}")
+
+
+# --- Flask setup (if needed for more complex backend operations later) ---
 app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
-app.config['SECRET_KEY'] = os.urandom(24) # Important for session security in Flask
 
-
-def get_db():
-    """Establishes a database connection if one doesn't exist."""
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row  # Access data by column name
-    return db
-
-
-@app.teardown_appcontext
-def close_connection(exception):
-    """Closes the database connection after each request."""
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
-
-
-def init_db():
-    """Initializes the database using the schema.sql file."""
-    with app.app_context():  # Ensures application context for database operations
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-# For local development, create the instance folder if it doesn't exist
-if not os.path.exists(app.instance_path):
-    os.makedirs(app.instance_path)
-
-# Initialize the database on startup (ensure this is not run in production if the db already exists and has data)
-init_db()
-
-
-# Routes
-@app.route("/")
+@app.route('/')
 def index():
     return render_template("index.html")
 
+# --- Streamlit App ---
+st.title("Sales Dashboard")
 
-@app.route("/bar_chart")
-def bar_chart():
-    db = get_db()
-    data = db.execute("SELECT product, sales_amount FROM sales").fetchall()
-    products = [row['product'] for row in data]  # Access data by column name
-    sales = [row['sales_amount'] for row in data]
+# --- Data Loading and Caching ---
+@st.cache_data  # Cache the data
+def load_data(conn):
+    df = pd.read_sql_query("SELECT * from sales", conn)
+    return df
 
-    # ... (rest of the chart generation code remains the same)
-
-
-@app.route("/pie_chart")
-def pie_chart():
-    db = get_db()
-    data = db.execute("SELECT product, sales_amount FROM sales").fetchall()
-    products = [row['product'] for row in data]
-    sales = [row['sales_amount'] for row in data]
-
-    # ... (rest of the chart generation code remains the same)
+# --- Database initialization happens outside cached function ---
+conn = create_connection(DATABASE_PATH)
+if conn:
+    create_table(conn)
+    insert_sample_data(conn, SAMPLE_DATA)
+    df = load_data(conn)   # Call after the table has been populated
+    conn.close()  # Close connection after loading
 
 
+# --- Visualization ---
+if df is not None: # Check if the dataframe was loaded
+    st.subheader("Sales by Product")
+    fig_bar = px.bar(df, x='product', y='sales_amount', color='category')
+    st.plotly_chart(fig_bar)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+    st.subheader("Sales Distribution by Category")
+    category_sales = df.groupby('category')['sales_amount'].sum().reset_index()
+    fig_pie = px.pie(category_sales, values='sales_amount', names='category')
+    st.plotly_chart(fig_pie)
+else:
+    st.error("Could not load sales data.")  # Informative message
+
+
+# Streamlit app run (if not using Flask)
+if __name__ == '__main__' and not st._is_running_with_streamlit:  # Check Streamlit context
+    st.set_option('server.headless', True)
+    st.run()
+
+
+# --- Uncomment to serve via Flask ---
+# if __name__ == '__main__':
+#     app.run(debug=True)
