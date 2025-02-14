@@ -1,117 +1,105 @@
-# app.py
+# db_utils.py
 import sqlite3
+
+DB_NAME = 'sales_data.db'
+
+def create_table():
+    conn = sqlite3.connect(DB_NAME)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            product TEXT,
+            category TEXT,
+            sales_quantity INTEGER,
+            sales_amount REAL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def populate_table():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:
+        dummy_data = [
+            ('Product A', 'Category 1', 100, 5000),
+            ('Product B', 'Category 2', 50, 2500),
+            ('Product C', 'Category 1', 75, 3750),
+            ('Product D', 'Category 2', 120, 6000),
+            ('Product E', 'Category 3', 90, 4500),
+        ]
+        conn.executemany("INSERT INTO sales VALUES (?, ?, ?, ?)", dummy_data)
+        conn.commit()
+    conn.close()
+
+
+def get_sales_data(category):
+    conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql_query("SELECT product, sales_quantity, sales_amount FROM sales WHERE category=?", conn, params=(category,)) #Combined query
+    conn.close()
+    return df
+
+def get_categories():
+    conn = sqlite3.connect(DB_NAME)
+    categories = pd.read_sql_query("SELECT DISTINCT category FROM sales", conn)['category'].tolist()
+    conn.close()
+    return categories
+
+
+# app.py
 import dash
 from dash import dcc
 from dash import html
 from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
-from flask_caching import Cache
 
-# Configuration (consider moving to a separate config file or environment variables)
-DATABASE_FILE = "sales_data.db"  # Avoid hardcoding paths
-DEBUG_MODE = False  # Set to False for production
+import db_utils  # Import the database functions
 
-# Cache settings (improve performance for repeated queries)
-CACHE_CONFIG = {
-    "CACHE_TYPE": "filesystem",  # Consider Redis or Memcached for production
-    "CACHE_DIR": "cache_directory"  # Specify a directory for caching
-}
-
-# Create the Dash app
+# Initialize the Dash app
 app = dash.Dash(__name__)
-cache = Cache()
-cache.init_app(app.server, config=CACHE_CONFIG)
+
+# Create the database table and populate it with initial data
+db_utils.create_table()
+db_utils.populate_table()
 
 
-# Database connection function (using context manager for proper closing)
-def get_db_connection():
-    try:
-        conn = sqlite3.connect(DATABASE_FILE)
-        return conn
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")
-        return None
 
+# Layout of the dashboard
+app.layout = html.Div(children=[
+    html.H1(children='Sales Dashboard'),
 
-# Initialize database and populate if empty
-def initialize_database():
-    conn = get_db_connection()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sales (
-                region TEXT,
-                product TEXT,
-                sales INTEGER
-            )
-        ''')
-
-        # Check if the table is empty before inserting sample data
-        cursor.execute("SELECT COUNT(*) FROM sales")
-        if cursor.fetchone()[0] == 0:
-            sample_data = [
-                ('North', 'Product A', 1200),
-                ('North', 'Product B', 850),
-                ('East', 'Product A', 1500),
-                ('East', 'Product B', 1100),
-                ('South', 'Product A', 900),
-                ('South', 'Product B', 700),
-                ('West', 'Product A', 1000),
-                ('West', 'Product B', 950),
-            ]
-            cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
-            conn.commit()
-        conn.close()
-
-
-# Call the database initialization function
-initialize_database()
-
-# Layout of the app
-app.layout = html.Div([
-    html.H1("Sales Dashboard"),
-    dcc.Dropdown(
-        id='product-dropdown',
-        options=[],  # Options will be populated dynamically
-        value=None  # Start with no initial value
-    ),
+    # Bar chart
     dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart')
+
+    # Pie chart
+    dcc.Graph(id='pie-chart'),
+
+    # Dropdown for product category selection
+    dcc.Dropdown(
+        id='category-dropdown',
+        options=[{'label': i, 'value': i} for i in db_utils.get_categories()],
+        value=db_utils.get_categories()[0], # Default value: first category
+        clearable=False
+    )
+
 ])
 
-# Callback to populate the dropdown and update charts
 
-
+# Callback to update both charts
 @app.callback(
-    [Output('product-dropdown', 'options'),
-     Output('bar-chart', 'figure'),
-     Output('pie-chart', 'figure')],
-    [Input('product-dropdown', 'value')]
-)
-@cache.memoize(timeout=60)  # Cache results for 60 seconds
-def update_charts(selected_product):
-    conn = get_db_connection()
-    if not conn:
-        return [], {}, {} # Return empty figures if no database connection
+    Output('bar-chart', 'figure'),
+    Output('pie-chart', 'figure'),
+    Input('category-dropdown', 'value'))
+def update_charts(selected_category):
+    df = db_utils.get_sales_data(selected_category)
 
-    # Query for available products
-    products = pd.read_sql_query("SELECT DISTINCT product FROM sales", conn)
-    dropdown_options = [{'label': p, 'value': p} for p in products['product']]
-
-    if selected_product:
-        df = pd.read_sql_query("SELECT * FROM sales WHERE product = ?", conn, params=(selected_product,))
-    else:
-        df = pd.DataFrame()  # Empty dataframe if no product selected
+    bar_fig = px.bar(df, x='product', y='sales_quantity', title=f'Sales Quantity by Product (Category: {selected_category})')
+    pie_fig = px.pie(df, values='sales_amount', names='product', title=f'Sales Amount Distribution (Category: {selected_category})')
+    return bar_fig, pie_fig
 
 
-    conn.close()
 
-    bar_fig = px.bar(df, x='region', y='sales', title=f'Sales by Region for {selected_product or "All Products"}')
-    pie_fig = px.pie(df, values='sales', names='region', title=f'Sales Distribution for {selected_product or "All Products"}')
-
-    return dropdown_options, bar_fig, pie_fig
-
-
+# Run the app
 if __name__ == '__main__':
-    app.run_server(debug=DEBUG_MODE)
+    app.run_server(debug=True)
