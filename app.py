@@ -1,42 +1,32 @@
-# app.py (Flask backend)
-from flask import Flask, render_template, jsonify
+# app.py (Python - Flask and Streamlit integration)
+
+from flask import Flask, render_template, redirect, url_for # Import url_for and redirect
 import sqlite3
+import pandas as pd
+import streamlit as st
+from streamlit_option_menu import option_menu
 import os
 
 app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
 
-def get_db_connection():
-    """Establishes a connection to the database."""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Access data by column name
-    return conn
+# Database setup (using a more robust approach with try-except and parameterization)
+DB_NAME = "sales_data.db"  # Use a variable for the database name
 
-def init_db():
-    """Initializes the database and creates the sales table."""
-    with app.app_context():  # Access app context for instance path
-        conn = get_db_connection()
-        with app.open_resource('schema.sql', mode='r') as f:
-            conn.cursor().executescript(f.read())
-        conn.commit()
-        conn.close()
 
-# Check if the instance folder exists and create if not.
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
-
-# Initialize database if it doesn't exist.
-if not os.path.exists(DATABASE):
-    init_db()
-
-def insert_dummy_data():
-    """Inserts dummy data into the sales table if it's empty."""
-    conn = get_db_connection()
+def create_and_populate_db():
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM sales")
-    if cursor.fetchone()[0] == 0:
+
+    try:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales (
+                product TEXT,
+                category TEXT,
+                sales_quantity INTEGER,
+                sales_amount REAL
+            )
+        ''')
+
         dummy_data = [
             ('Product A', 'Electronics', 100, 5000.00),
             ('Product B', 'Clothing', 50, 2500.00),
@@ -44,40 +34,53 @@ def insert_dummy_data():
             ('Product D', 'Books', 120, 2400.00),
             ('Product E', 'Clothing', 90, 4500.00),
         ]
-        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?, ?)", dummy_data)
+
+        cursor.executemany("INSERT OR IGNORE INTO sales VALUES (?, ?, ?, ?)", dummy_data)  # Parameterized query
         conn.commit()
-    conn.close()
+    except Exception as e:  # Handle potential database errors
+        print(f"Database error: {e}")
+        conn.rollback()  # Rollback changes in case of error. 
+    finally:
+        conn.close()
+
+# Call the function to create/populate the database on app start
+create_and_populate_db()
+
 
 
 @app.route('/')
 def index():
-    insert_dummy_data() # Ensure dummy data exists before rendering the template
     return render_template('index.html')
 
-@app.route('/data')
-def get_data():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT product, sales_quantity, category, sales_revenue FROM sales")
-    rows = cursor.fetchall()
-    conn.close()
 
-    # Improved data handling using dictionary comprehension and list comprehension
-    data = {
-        'products': [row['product'] for row in rows],
-        'sales_quantities': [row['sales_quantity'] for row in rows],
-        'categories': list({row['category'] for row in rows}),  # Efficiently get unique categories
-        'sales_revenues_by_category': {}  # Aggregate revenue by category
-    }
+@app.route('/dashboard')
+def dashboard():
+    # Fetch data from SQLite (using a context manager)
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            df = pd.read_sql_query("SELECT * FROM sales", conn)
+    except Exception as e:  # Handle potential database query errors
+        print(f"Error fetching data: {e}")
+        st.error("Error fetching data. Please check logs.") # Display error message to user in Streamlit
+        return redirect(url_for('index')) # Redirect back to main page on error
 
-    # Aggregate revenue by category efficiently using a loop
-    for row in rows:
-        category = row['category']
-        revenue = row['sales_revenue']
-        data['sales_revenues_by_category'][category] = data['sales_revenues_by_category'].get(category, 0) + revenue
 
-    return jsonify(data)  # Return JSON data
+
+    st.set_page_config(page_title="Sales Dashboard", page_icon=":bar_chart:")
+
+    selected = option_menu(None, ["Bar Chart", "Pie Chart"],
+        icons=['bar-chart-fill', 'pie-chart-fill'],
+        menu_icon="cast", default_index=0, orientation="horizontal")
+
+    if selected == "Bar Chart":
+        st.bar_chart(df, x="product", y="sales_amount")
+    if selected == "Pie Chart":
+        st.title("Sales Distribution by Category")
+        category_sales = df.groupby("category")["sales_amount"].sum()
+        st.pie_chart(category_sales)
+
+    return st.markdown("Dashboard displayed!")  # Return a Streamlit element
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True)  # In development, set debug=True. In production set debug=False.
