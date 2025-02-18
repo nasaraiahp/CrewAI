@@ -1,96 +1,85 @@
-# app.py (Flask application)
-import os
-from flask import Flask, render_template, g
+# app.py
+import dash
+from dash import dcc
+from dash import html
+from dash.dependencies import Input, Output
+import plotly.express as px
+import pandas as pd
 import sqlite3
-import plotly
-import plotly.graph_objs as go
-import json
 
-app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+# Database setup (consider moving to a separate file for larger applications)
+DATABASE = 'sales_data.db'
 
-# Database setup and connection management
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row  # Access data by column name
-    return db
+def create_database():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            product TEXT,
+            category TEXT,
+            sales_amount REAL
+        )
+    ''')
 
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-
-# Ensure instance folder exists
-os.makedirs(app.instance_path, exist_ok=True)
-
-
-def insert_dummy_data():
-    with app.app_context():
-        db = get_db()
-        db.execute('DELETE FROM sales')  # Clear existing data
-        dummy_data = [
-            ('Product A', 120),
-            ('Product B', 80),
-            ('Product C', 150),
-            ('Product D', 50),
-            ('Product E', 100),
-        ]
-        db.executemany('INSERT INTO sales (product, sales_quantity) VALUES (?, ?)', dummy_data)
-        db.commit()
+    dummy_data = [
+        ('Product A', 'Category 1', 1200),
+        ('Product B', 'Category 1', 850),
+        ('Product C', 'Category 2', 1500),
+        ('Product D', 'Category 2', 1100),
+        ('Product E', 'Category 3', 900),
+        ('Product F', 'Category 3', 1300),
+    ]
+    # Check if the table is empty before inserting dummy data
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:  # Insert only if the table is empty
+        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
+        conn.commit()
+    conn.close()
 
 
-
-@app.route('/')
-def dashboard():
-    with app.app_context():  # Correct context for database access
-        db = get_db()
-        sales_data = db.execute('SELECT * FROM sales').fetchall()
-
-    # Create Plotly charts
-    bar_chart = create_bar_chart(sales_data)
-    pie_chart = create_pie_chart(sales_data)
-
-    return render_template('dashboard.html', bar_chart=bar_chart, pie_chart=pie_chart)
+# Create the database if it doesn't exist
+create_database()
 
 
+app = dash.Dash(__name__)
 
-def create_bar_chart(sales_data): #Moved outside app context as it does not use db
-    products = [row['product'] for row in sales_data]
-    quantities = [row['sales_quantity'] for row in sales_data]
-    bar_chart = {
-        "data": [go.Bar(x=products, y=quantities)],
-        "layout": go.Layout(title="Sales by Product (Bar Chart)")
-    }
-    graphJSON = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
+app.layout = html.Div([
+    html.H1("Sales Data Dashboard"),
+
+    dcc.Dropdown(
+        id='category-dropdown',
+        options=[{'label': i, 'value': i} for i in ['All'] + list(pd.read_sql_query("SELECT DISTINCT category FROM sales", sqlite3.connect(DATABASE))['category'])],  # Dynamically populate dropdown
+        value='All',  # Default value
+        clearable=False  # Prevent clearing the selection
+    ),
+
+    dcc.Graph(id='sales-bar-chart'),
+    dcc.Graph(id='sales-pie-chart')
+])
 
 
-def create_pie_chart(sales_data): #Moved outside app context as it does not use db
-    products = [row['product'] for row in sales_data]
-    quantities = [row['sales_quantity'] for row in sales_data]
+@app.callback(
+    [Output('sales-bar-chart', 'figure'), Output('sales-pie-chart', 'figure')],
+    Input('category-dropdown', 'value')
+)
+def update_charts(selected_category):
+    # Use parameterized query to prevent SQL injection
+    sql = "SELECT * FROM sales"
+    params = ()
 
-    pie_chart = {
-        "data": [go.Pie(labels=products, values=quantities)],
-        "layout": go.Layout(title="Sales Distribution (Pie Chart)")
-    }
+    if selected_category != 'All':
+        sql = "SELECT * FROM sales WHERE category = ?"
+        params = (selected_category,) # Make a tuple
 
-    graphJSON = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
+    with sqlite3.connect(DATABASE) as conn:  # Context manager ensures connection is closed
+        df = pd.read_sql_query(sql, conn, params=params)  # Use params with the query
+
+    bar_fig = px.bar(df, x='product', y='sales_amount', color='category', title='Sales by Product')
+    pie_fig = px.pie(df, values='sales_amount', names='product', title='Sales Distribution')
+    return bar_fig, pie_fig
 
 
 
 if __name__ == '__main__':
-    init_db()
-    insert_dummy_data()
-    app.run(debug=True)
+    app.run_server(debug=True)
