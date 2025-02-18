@@ -1,76 +1,56 @@
-# app.py
-import os
-from flask import Flask, render_template
+from flask import Flask, render_template, g
 import sqlite3
 import plotly
 import plotly.graph_objs as go
 import json
+import os
 
 app = Flask(__name__)
+DATABASE = 'sales_data.db'  # Define database path
 
-# Database setup
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store database in instance folder
+# Database setup (using SQLite)
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+    return db
 
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 def init_db():
-    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance path exists
     with app.app_context():
-        conn = get_db_connection()
+        db = get_db()
         with app.open_resource('schema.sql', mode='r') as f:
-            conn.executescript(f.read())
-        conn.commit()
-        conn.close()
-        populate_database()
+            db.cursor().executescript(f.read())
+        db.commit()
 
+# Check if the database file exists and create it if it doesn't
+if not os.path.exists(DATABASE):
+    init_db()
 
-
-def populate_database():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    sample_data = [
-        ('Product A', 15000),
-        ('Product B', 25000),
-        ('Product C', 10000),
-        ('Product D', 30000),
-        ('Product E', 20000)
-    ]
-    try:  # Use try-except to handle potential errors during insertion
-        cur.executemany("INSERT INTO sales (product, sales_amount) VALUES (?, ?)", sample_data)
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")  # Log the error for debugging
-    finally:  # Ensure connection is closed in all cases
-        conn.close()
 
 
 @app.route('/')
 def index():
+    bar_data = query_db("SELECT product, sales_quantity FROM sales")
+    bar_chart = go.Figure(data=[go.Bar(x=[row[0] for row in bar_data], y=[row[1] for row in bar_data])])
+    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    conn = get_db_connection()
-    try:
-        sales_data = conn.execute('SELECT * FROM sales').fetchall()
-    except sqlite3.Error as e:  # Handle potential database errors
-        print(f"Database error: {e}")
-        sales_data = []  # Provide a default empty list in case of error
-    finally:
-        conn.close()
+    pie_data = query_db("SELECT category, SUM(sales_quantity) FROM sales GROUP BY category")
+    pie_chart = go.Figure(data=[go.Pie(labels=[row[0] for row in pie_data], values=[row[1] for row in pie_data])])
+    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
-                                        y=[row['sales_amount'] for row in sales_data])])
-
-    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
-                                        values=[row['sales_amount'] for row in sales_data])])
-
-
-    return render_template('index.html',
-                           bar_chart=json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder),
-                           pie_chart=json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder))
-
+    return render_template('index.html', bar_chart_json=bar_chart_json, pie_chart_json=pie_chart_json)
 
 if __name__ == '__main__':
-    init_db()  # Initialize the database
-    app.run(debug=True)
+    app.run(debug=True) # Never enable debug mode in production
