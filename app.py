@@ -1,14 +1,12 @@
 from flask import Flask, render_template, g
 import sqlite3
-import plotly
 import plotly.graph_objs as go
-import json
+import pandas as pd
 import os
 
 app = Flask(__name__)
-DATABASE = os.path.join(app.root_path, 'data.db')  # Define database path relative to the app
+DATABASE = os.path.join(app.instance_path, 'sales.db')  # Store DB in instance folder
 
-# Database connection using application context
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
@@ -22,37 +20,39 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
-def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
+def init_db():
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('create_db.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
 
-
-@app.route('/')
+@app.route("/")
 def index():
-    sales_data = query_db('SELECT product, SUM(sales) as total_sales FROM sales_data GROUP BY product')
+    db = get_db()
+    try:
+        sales_data = pd.read_sql_query("SELECT * FROM sales", db)
+    except Exception as e:  # Basic error handling
+        print(f"Database query error: {e}")  # Log the error.  Use a proper logger in production
+        return "An error occurred while fetching data." # Return a user-friendly error message
 
-    # Plotly Bar Chart
-    bar_chart = {
-        "data": [go.Bar(x=[row['product'] for row in sales_data],
-                         y=[row['total_sales'] for row in sales_data])],
-        "layout": go.Layout(title="Product Sales")
 
-    }
+    # Create charts (logic remains the same)
+    bar_chart = go.Figure(data=[go.Bar(x=sales_data['product'], y=sales_data['sales'])])
+    bar_chart.update_layout(title="Sales by Product")
+    bar_chart_json = bar_chart.to_json()
 
-    #Plotly Pie chart
-    pie_labels = [row['product'] for row in sales_data]
-    pie_values = [row['total_sales'] for row in sales_data]
-    pie_chart = {
-        "data": [go.Pie(labels=pie_labels, values=pie_values)],
-        "layout": go.Layout(title="Sales Distribution")
-    }
+    pie_chart = go.Figure(data=[go.Pie(labels=sales_data['region'], values=sales_data['sales'])])
+    pie_chart.update_layout(title="Sales by Region")
+    pie_chart_json = pie_chart.to_json()
 
-    bar_graph_JSON = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    pie_graph_JSON = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    return render_template('index.html', bar_graph_JSON=bar_graph_JSON, pie_graph_JSON=pie_graph_JSON)
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
+# Ensure the instance folder exists
+os.makedirs(app.instance_path, exist_ok=True)
+
+# Initialize the database (remove this after first run if you don't want data reset on each run)
+#init_db()  
 
 if __name__ == '__main__':
-    app.run(debug=True) #Consider removing debug=True in production
+    app.run(debug=False)  # Disable debug mode in production!
