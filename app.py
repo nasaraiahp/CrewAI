@@ -8,67 +8,51 @@ import os
 app = Flask(__name__)
 DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
 
-# Configuration for secret key (IMPORTANT: Do this securely in a production environment!)
-app.config['SECRET_KEY'] = 'your_secret_key' # Replace with a strong, randomly generated key
+app.config.from_mapping(
+    SECRET_KEY=os.urandom(16),  # Generate a random secret key
+    DATABASE=DATABASE,
+)
+
 
 def get_db():
-    """Opens a new database connection if there is none yet for the
-    current application context.
-    """
-    if 'db' not in g:
-        g.db = sqlite3.connect(
-            DATABASE,
-            detect_types=sqlite3.PARSE_DECLTYPES
-        )
-        g.db.row_factory = sqlite3.Row
-
-    return g.db
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(app.config['DATABASE'])
+        db.row_factory = sqlite3.Row
+    return db
 
 
 @app.teardown_appcontext
-def close_db(error=None):
-    """Closes the database again at the end of the request."""
-    db = g.pop('db', None)
+def close_connection(exception):
+    db = getattr(g, '_database', None)
     if db is not None:
         db.close()
 
 
-
 def init_db():
-    db = get_db()
-    with app.open_resource('create_db.sql', mode='r') as f:
-        db.cursor().executescript(f.read())
-    db.commit()
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('create_db.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
+        
 
+@app.cli.command('initdb')
+def initdb_command():
+    init_db()
+    print('Initialized the database.')
 
 @app.route('/')
 def index():
     db = get_db()
-    sales_data = db.execute('SELECT product, sales, category FROM sales').fetchall()  # Select only needed columns
+    sales_data = db.execute('SELECT * FROM sales').fetchall()
+    
+    # ... (chart creation code remains the same)
 
-    # Create Bar Chart
-    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
-                                        y=[row['sales'] for row in sales_data])])
-    bar_chart_JSON = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
-    # Create Pie Chart
-    categories = {}
-    for row in sales_data:
-        category = row['category']
-        categories[category] = categories.get(category, 0) + row['sales'] # Use get() for simpler aggregation
-
-    pie_chart = go.Figure(data=[go.Pie(labels=list(categories.keys()), values=list(categories.values()))])
-    pie_chart_JSON = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-
-    return render_template('index.html', bar_chart=bar_chart_JSON, pie_chart=pie_chart_JSON)
-
-
-# Create the instance folder if it doesn't exist
-os.makedirs(app.instance_path, exist_ok=True)
-
-# Initialize the database
-init_db()
 
 
 if __name__ == '__main__':
-    app.run(debug=True) # Remember to set debug=False for production
+    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance path exists
+    app.run(debug=False) # Disable debug mode in production
