@@ -1,76 +1,58 @@
-# app.py
-import os
-from flask import Flask, render_template, request
+from flask import Flask, render_template, g
 import sqlite3
+import plotly
 import plotly.graph_objs as go
-import pandas as pd
+import json
+import os
 
 app = Flask(__name__)
+DATABASE = os.path.join(app.root_path, 'data.db')  # Define database path relative to the app
 
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+# Database connection using application context
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
 
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-def init_db():
-    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance path exists
-    with app.app_context():  # access the app context inside this function
-        conn = get_db_connection()
-        with app.open_resource('schema.sql', mode='r') as f:
-            conn.executescript(f.read())
-        conn.commit()
-        conn.close()
-
-
-@app.route('/', methods=['GET', 'POST'])
-def dashboard():
-    conn = get_db_connection()
-    df_bar = df_pie = pd.DataFrame()  # Initialize even if query fails
-    error = None
-    chart_types = {'bar': 'Sales by Product Category', 'pie': 'Sales Distribution by Region'}
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 
-    if request.method == 'POST':
-        selected_chart_type = request.form.get('chart_type')
-        if selected_chart_type not in chart_types:  # Validate input
-            error = "Invalid chart type selected"
+@app.route('/')
+def index():
+    sales_data = query_db('SELECT product, SUM(sales) as total_sales FROM sales_data GROUP BY product')
 
-    selected_chart_type = request.form.get('chart_type', 'bar')  # Default to 'bar'
+    # Plotly Bar Chart
+    bar_chart = {
+        "data": [go.Bar(x=[row['product'] for row in sales_data],
+                         y=[row['total_sales'] for row in sales_data])],
+        "layout": go.Layout(title="Product Sales")
 
+    }
 
-    try:
-        if selected_chart_type == 'bar':
-            df_bar = pd.read_sql_query("SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category", conn)
+    #Plotly Pie chart
+    pie_labels = [row['product'] for row in sales_data]
+    pie_values = [row['total_sales'] for row in sales_data]
+    pie_chart = {
+        "data": [go.Pie(labels=pie_labels, values=pie_values)],
+        "layout": go.Layout(title="Sales Distribution")
+    }
 
-        elif selected_chart_type == 'pie':
-            df_pie = pd.read_sql_query("SELECT region, SUM(sales) AS total_sales FROM sales GROUP BY region", conn)
-
-
-    except sqlite3.Error as e:  # Catch db errors
-        error = f"Database error: {e}"
-    finally: # Always close after use
-        conn.close()
-
-    # Create charts only if data is available
-    bar_chart_json = pie_chart_json = None
-
-    if not df_bar.empty:
-        bar_chart = go.Figure(data=[go.Bar(x=df_bar['product_category'], y=df_bar['total_sales'])])
-        bar_chart.update_layout(title=chart_types.get('bar', 'Bar Chart')) # Use dict to lookup
-        bar_chart_json = bar_chart.to_json()
-    
-    if not df_pie.empty:
-        pie_chart = go.Figure(data=[go.Pie(labels=df_pie['region'], values=df_pie['total_sales'])])
-        pie_chart.update_layout(title=chart_types.get('pie', 'Pie Chart'))
-        pie_chart_json = pie_chart.to_json()
-
-
-    return render_template('dashboard.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json, chart_types=chart_types, selected_chart_type=selected_chart_type, error=error)
-
+    bar_graph_JSON = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    pie_graph_JSON = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    return render_template('index.html', bar_graph_JSON=bar_graph_JSON, pie_graph_JSON=pie_graph_JSON)
 
 
 if __name__ == '__main__':
-    init_db() # Initialize the database
-    app.run(debug=True)
+    app.run(debug=True) #Consider removing debug=True in production
