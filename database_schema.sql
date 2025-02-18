@@ -1,14 +1,7 @@
+-- schema.sql
 CREATE TABLE IF NOT EXISTS sales (
-    product TEXT,
-    category TEXT,
-    sales_quantity INTEGER
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product TEXT NOT NULL,
+    category TEXT NOT NULL,
+    sales_amount REAL NOT NULL
 );
-
-DELETE FROM sales; -- Clear existing data for demo
-
-INSERT INTO sales VALUES
-    ('Product A', 'Electronics', 150),
-    ('Product B', 'Clothing', 200),
-    ('Product C', 'Electronics', 100),
-    ('Product D', 'Books', 120),
-    ('Product E', 'Clothing', 80);
