@@ -1,87 +1,66 @@
-# app.py
-import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
-import plotly.express as px
-import pandas as pd
+from flask import Flask, render_template
 import sqlite3
+import plotly.graph_objs as go
+import pandas as pd
 import os
 
-# Database setup (best practice to externalize configuration)
-DATABASE_URL = os.environ.get("DATABASE_URL", "sales_data.db")  # Use environment variable for Heroku
+app = Flask(__name__)
 
-# Create a connection function for reusability and better resource management
+DATABASE = 'sales_data.db'
+
 def get_db_connection():
-    return sqlite3.connect(DATABASE_URL)
+    """Establishes a connection to the SQLite database."""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # Access data by column name
+    return conn
 
-# Initialize database if it doesn't exist (check outside the main app logic)
-with get_db_connection() as conn:
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales (
-            product TEXT,
-            sales_quantity INTEGER,
-            sales_region TEXT
-        )
-    ''')
+def create_database():
+    """Creates the database table if it doesn't exist and populates with initial data."""
+    if not os.path.exists(DATABASE):  # Check if database file exists. Create if not.
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    # Check if table is empty before inserting sample data. This prevents duplicates on each run.
-    cursor.execute("SELECT COUNT(*) FROM sales")
-    if cursor.fetchone()[0] == 0: # Check if the table is empty. If it is, then populate table.
+        cursor.execute('''
+            CREATE TABLE sales (
+                region TEXT,
+                product TEXT,
+                sales_amount REAL
+            )
+        ''')
+
         sample_data = [
-            ('Product A', 100, 'North America'),
-            ('Product B', 150, 'Europe'),
-            ('Product C', 200, 'Asia'),
-            ('Product A', 75, 'Europe'),
-            ('Product B', 120, 'North America'),
-            ('Product C', 180, 'Asia'),
-            ('Product D', 90, 'North America'),
-            ('Product E', 110, 'Europe')
+            ('North', 'Product A', 1200),
+            ('North', 'Product B', 850),
+            ('East', 'Product A', 1500),
+            ('East', 'Product C', 1000),
+            ('South', 'Product B', 1100),
+            ('South', 'Product C', 900),
+            ('West', 'Product A', 1800),
+            ('West', 'Product B', 700),
+            ('West', 'Product D', 1300),
         ]
+
         cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
         conn.commit()
+        conn.close()
 
+@app.route('/')
+def index():
+    create_database()
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM sales", conn)
+    conn.close()
 
+    bar_chart = go.Figure(data=[go.Bar(x=df['region'], y=df['sales_amount'])])
+    bar_chart.update_layout(title='Sales by Region')
+    bar_chart_json = bar_chart.to_json()
 
-app = dash.Dash(__name__)
-server = app.server  # For gunicorn/heroku deployment
+    pie_chart = go.Figure(data=[go.Pie(labels=df['product'], values=df['sales_amount'])])
+    pie_chart.update_layout(title='Sales by Product')
+    pie_chart_json = pie_chart.to_json()
 
-app.layout = html.Div(children=[
-    html.H1(children="Sales Dashboard"),
-
-    html.Div([
-        html.Label("Select Sales Region:"),
-        dcc.Dropdown(
-            id='region-dropdown',
-            options=[{'label': i, 'value': i} for i in ['All', 'North America', 'Europe', 'Asia']],
-            value='All'
-        )
-    ], style={'width': '30%', 'display': 'inline-block'}),
-
-    dcc.Graph(id='sales-bar-chart'),
-    dcc.Graph(id='sales-pie-chart')
-])
-
-
-@app.callback(
-    [Output('sales-bar-chart', 'figure'),
-     Output('sales-pie-chart', 'figure')],
-    [Input('region-dropdown', 'value')]
-)
-def update_charts(selected_region):
-    with get_db_connection() as conn:  # Context manager ensures connection is closed
-        df = pd.read_sql_query("SELECT * FROM sales", conn)
-        
-    if selected_region != 'All':
-        df = df[df['sales_region'] == selected_region]
-
-    bar_fig = px.bar(df, x='product', y='sales_quantity', title="Sales by Product")
-    pie_fig = px.pie(df, values='sales_quantity', names='product', title='Sales Distribution by Product')
-
-    return bar_fig, pie_fig
-
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
