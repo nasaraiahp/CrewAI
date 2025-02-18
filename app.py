@@ -1,19 +1,18 @@
 from flask import Flask, render_template, g
 import sqlite3
+import plotly
 import plotly.graph_objs as go
 import json
 import os
 
-app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
-app.config['SECRET_KEY'] = os.urandom(24) # Add a secret key for session management (important if you later add features that use sessions)
-
+app = Flask(__name__, template_folder='templates')  # Explicit template folder
+DATABASE = os.path.join(app.instance_path, 'sales.db') # Define database path relative to the app's instance folder
 
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
+        db.row_factory = sqlite3.Row # Access data by name instead of index
     return db
 
 @app.teardown_appcontext
@@ -21,6 +20,7 @@ def close_connection(exception):
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
+
 
 def query_db(query, args=(), one=False):
     cur = get_db().execute(query, args)
@@ -31,21 +31,35 @@ def query_db(query, args=(), one=False):
 
 @app.route('/')
 def index():
-    bar_chart_data = query_db("SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category")
-    bar_labels = [row['product_category'] for row in bar_chart_data]
-    bar_values = [row['total_sales'] for row in bar_chart_data]
-    bar_chart = go.Figure(data=[go.Bar(x=bar_labels, y=bar_values)])
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    try:
+        # Query data for bar chart
+        sales_by_product = query_db('SELECT product, SUM(sales) AS total_sales FROM sales_data GROUP BY product')
+        product_names = [row['product'] for row in sales_by_product]
+        sales_figures = [row['total_sales'] for row in sales_by_product]
 
-    pie_chart_data = query_db("SELECT sales_region, SUM(sales) AS total_sales FROM sales GROUP BY sales_region")
-    pie_labels = [row['sales_region'] for row in pie_chart_data]
-    pie_values = [row['total_sales'] for row in pie_chart_data]
-    pie_chart = go.Figure(data=[go.Pie(labels=pie_labels, values=pie_values)])
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+        bar_chart = go.Figure(data=[go.Bar(x=product_names, y=sales_figures)])
+        bar_chart.update_layout(title='Sales by Product')
+        bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+        # Query data for pie chart
+        sales_by_region = query_db('SELECT region, SUM(sales) AS total_sales FROM sales_data GROUP BY region')
+        region_names = [row['region'] for row in sales_by_region]
+        region_sales = [row['total_sales'] for row in sales_by_region]
+
+        pie_chart = go.Figure(data=[go.Pie(labels=region_names, values=region_sales)])
+        pie_chart.update_layout(title='Sales by Region')
+        pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+        return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")  # Log the error for debugging
+        return "A database error occurred.", 500 # Return a generic error message to the user
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}") # Log the error for debugging
+        return "An unexpected error occurred.", 500  # Return a generic error message to the user
 
 
 if __name__ == '__main__':
-    os.makedirs(app.instance_path, exist_ok=True) # Ensure instance folder exists
-    app.run(debug=True)
+    os.makedirs(app.instance_path, exist_ok=True) # Ensure the instance folder exists
+    app.run(debug=False) # Disable debug mode in production
