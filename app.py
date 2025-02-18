@@ -1,80 +1,83 @@
-# app.py
-import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
-import plotly.express as px
+from flask import Flask, render_template, g
 import sqlite3
+import plotly.graph_objs as go
+import json
 import pandas as pd
+import os
 
-app = dash.Dash(__name__)
+app = Flask(__name__)
 
-# Database setup (using a temporary in-memory database for better security in this example)
-conn = sqlite3.connect(':memory:')  # Use an in-memory database for demonstration
-# For a persistent database, use a file path: conn = sqlite3.connect('sales_data.db')
-cursor = conn.cursor()
+# Database setup (use environment variables for sensitive data)
+DATABASE = os.environ.get("DATABASE_URL", "sales_data.db")  # Default to local file if environment variable isn't set
 
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS sales (
-        region TEXT,
-        product TEXT,
-        sales_amount REAL
-    )
-''')
+# Use a connection pool for database connections
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row # Access data by column name
+    return db
 
-# Dummy data (replace with your actual data loading logic)
-dummy_data = [
-    ('North', 'Product A', 1200),
-    ('North', 'Product B', 850),
-    ('South', 'Product A', 1500),
-    ('South', 'Product C', 1000),
-    ('East', 'Product B', 900),
-    ('East', 'Product C', 1100),
-    ('West', 'Product A', 1800),
-    ('West', 'Product D', 700),
-]
-cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
-conn.commit()
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 
-app.layout = html.Div(children=[
-    html.H1(children="Sales Dashboard"),
 
-    html.Div([
-        html.Label("Select Region:"),
-        dcc.Dropdown(
-            id='region-dropdown',
-            options=[{'label': region, 'value': region} for region in pd.read_sql_query("SELECT DISTINCT region FROM sales", conn)['region'].unique()],
-            value=[],  # Initialize with an empty list for multi-select
-            multi=True
-        )
-    ]),
-
-    dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart')
-
-])
-
-@app.callback(
-    [Output('bar-chart', 'figure'), Output('pie-chart', 'figure')],
-    [Input('region-dropdown', 'value')]
-)
-def update_charts(selected_regions):
-    if selected_regions:  # Handle the case where no region is selected
-        query = "SELECT * FROM sales WHERE region IN ({})".format(','.join('?' * len(selected_regions)))
-        df = pd.read_sql_query(query, conn, params=selected_regions)
-    else:
-        df = pd.read_sql_query("SELECT * FROM sales", conn)  # Query all data if no selection
+def create_tables():
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('schema.sql', mode='r') as f: # Execute schema from file
+            db.cursor().executescript(f.read())
+        db.commit()
 
 
-    bar_fig = px.bar(df, x='product', y='sales_amount', color='region', 
-                     title="Sales by Product and Region")
+def populate_data(): # Dummy Data
+    with app.app_context():
+        db = get_db()
+        sample_data = [
+            ('Product A', 'Category 1', 1200),
+            ('Product B', 'Category 2', 850),
+            ('Product C', 'Category 1', 1550),
+            ('Product D', 'Category 3', 900),
+            ('Product E', 'Category 2', 1100),
+            ('Product F', 'Category 1', 1700),
+            ('Product G', 'Category 2', 780),
+            ('Product H', 'Category 3', 1050),
+        ]
 
-    pie_fig = px.pie(df, values='sales_amount', names='region', 
-                     title="Sales Distribution by Region")
+        db.executemany("INSERT INTO sales (product, category, sales_amount) VALUES (?, ?, ?)", sample_data)
+        db.commit()
 
 
-    return bar_fig, pie_chart
+
+
+@app.route('/')
+def index():
+    with app.app_context():
+        df = pd.read_sql_query("SELECT * from sales", get_db())
+
+        # Bar chart
+        bar_chart = go.Figure(data=[go.Bar(x=df['product'], y=df['sales_amount'])])
+        bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+        # Pie chart
+        pie_chart = go.Figure(data=[go.Pie(labels=df['category'], values=df['sales_amount'])])
+        pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+        return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+
+
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    create_tables()  # Call this once to create tables initially
+    #populate_data() # Run this only once to populate with sample data for testing
+    app.run(debug=True)
