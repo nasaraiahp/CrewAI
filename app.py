@@ -9,76 +9,68 @@ import json
 app = Flask(__name__)
 
 # Database setup
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store database in instance folder
 
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Access data by column name
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    with app.app_context(): #Fixes RuntimeError: Working outside of application context.
+    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance path exists
+    with app.app_context():
         conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sales (
-                product TEXT, 
-                category TEXT, 
-                sales_amount REAL
-            )
-        ''')
-        dummy_data = [
-            ('Product A', 'Electronics', 1500),
-            ('Product B', 'Clothing', 800),
-            ('Product C', 'Electronics', 1200),
-            ('Product D', 'Books', 500),
-            ('Product E', 'Clothing', 900),
-            ('Product F', 'Electronics', 1000),
-            ('Product G', 'Books', 600),
-            ('Product H', 'Clothing', 700)
-        ]
-        cursor.executemany("INSERT OR IGNORE INTO sales VALUES (?, ?, ?)", dummy_data)
+        with app.open_resource('schema.sql', mode='r') as f:
+            conn.executescript(f.read())
         conn.commit()
+        conn.close()
+        populate_database()
 
 
-# Ensure the instance folder exists
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
 
-init_db()
+def populate_database():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    sample_data = [
+        ('Product A', 15000),
+        ('Product B', 25000),
+        ('Product C', 10000),
+        ('Product D', 30000),
+        ('Product E', 20000)
+    ]
+    try:  # Use try-except to handle potential errors during insertion
+        cur.executemany("INSERT INTO sales (product, sales_amount) VALUES (?, ?)", sample_data)
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")  # Log the error for debugging
+    finally:  # Ensure connection is closed in all cases
+        conn.close()
 
 
 @app.route('/')
 def index():
+
     conn = get_db_connection()
-    sales_data = conn.execute("SELECT product, sales_amount FROM sales").fetchall()
-    pie_data = conn.execute("SELECT category, SUM(sales_amount) FROM sales GROUP BY category").fetchall()    
-    conn.close()  # Close connection after use
+    try:
+        sales_data = conn.execute('SELECT * FROM sales').fetchall()
+    except sqlite3.Error as e:  # Handle potential database errors
+        print(f"Database error: {e}")
+        sales_data = []  # Provide a default empty list in case of error
+    finally:
+        conn.close()
 
-    bar_chart = create_bar_chart(sales_data)
-    pie_chart = create_pie_chart(pie_data)
+    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
+                                        y=[row['sales_amount'] for row in sales_data])])
 
-    return render_template('index.html', plot1=bar_chart, plot2=pie_chart)
-
-
-def create_bar_chart(data):
-    products = [row['product'] for row in data] # Use row factory to acces by name
-    sales = [row['sales_amount'] for row in data]
-    fig = go.Figure(data=[go.Bar(x=products, y=sales)])
-    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
+    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
+                                        values=[row['sales_amount'] for row in sales_data])])
 
 
-def create_pie_chart(data):
-    labels = [row['category'] for row in data]
-    values = [row['SUM(sales_amount)'] for row in data] # Accessing by column name.
-    fig = go.Figure(data=[go.Pie(labels=labels, values=values)])
-    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
-
+    return render_template('index.html',
+                           bar_chart=json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder),
+                           pie_chart=json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder))
 
 
 if __name__ == '__main__':
+    init_db()  # Initialize the database
     app.run(debug=True)
