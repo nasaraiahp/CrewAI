@@ -1,66 +1,77 @@
-from flask import Flask, render_template
+# app.py
 import sqlite3
+import json
+from flask import Flask, render_template
+import plotly
 import plotly.graph_objs as go
-import pandas as pd
 import os
 
 app = Flask(__name__)
 
-DATABASE = 'sales_data.db'
+# Database setup (use environment variable for security)
+DATABASE = os.environ.get("SALES_DATABASE", "sales_data.db")  # Default to sales_data.db if not set
 
-def get_db_connection():
-    """Establishes a connection to the SQLite database."""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Access data by column name
-    return conn
+def connect_db():
+    return sqlite3.connect(DATABASE)
 
-def create_database():
-    """Creates the database table if it doesn't exist and populates with initial data."""
-    if not os.path.exists(DATABASE):  # Check if database file exists. Create if not.
-        conn = get_db_connection()
+
+def get_db_cursor():  # Helper function to get a cursor within a context
+    conn = connect_db()
+    try:
         cursor = conn.cursor()
-
-        cursor.execute('''
-            CREATE TABLE sales (
-                region TEXT,
-                product TEXT,
-                sales_amount REAL
-            )
-        ''')
-
-        sample_data = [
-            ('North', 'Product A', 1200),
-            ('North', 'Product B', 850),
-            ('East', 'Product A', 1500),
-            ('East', 'Product C', 1000),
-            ('South', 'Product B', 1100),
-            ('South', 'Product C', 900),
-            ('West', 'Product A', 1800),
-            ('West', 'Product B', 700),
-            ('West', 'Product D', 1300),
-        ]
-
-        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
-        conn.commit()
+        yield cursor # Use yield to avoid manually closing in this function
+    finally:
         conn.close()
+
+
+
+
+def init_db(): # Function to initialize database, should only be called once
+    with get_db_cursor() as cursor:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS sales (
+                    product TEXT,
+                    category TEXT,
+                    sales_amount REAL
+                )
+            ''')
+            # Check if table is empty before inserting dummy data
+            cursor.execute("SELECT COUNT(*) FROM sales")
+            if cursor.fetchone()[0] == 0: # Only insert if table is empty
+                dummy_data = [
+                    ('Product A', 'Electronics', 1200),
+                    ('Product B', 'Clothing', 850),
+                    ('Product C', 'Books', 500),
+                    ('Product D', 'Electronics', 1500),
+                    ('Product E', 'Clothing', 600),
+                    ('Product F', 'Books', 700)
+                ]
+                cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
+
 
 @app.route('/')
 def index():
-    create_database()
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM sales", conn)
-    conn.close()
+    with get_db_cursor() as cursor:
+        try:
+            cursor.execute("SELECT product, sales_amount FROM sales")
+            sales_data = cursor.fetchall()
 
-    bar_chart = go.Figure(data=[go.Bar(x=df['region'], y=df['sales_amount'])])
-    bar_chart.update_layout(title='Sales by Region')
-    bar_chart_json = bar_chart.to_json()
+            cursor.execute("SELECT category, SUM(sales_amount) FROM sales GROUP BY category")
+            category_data = cursor.fetchall()
 
-    pie_chart = go.Figure(data=[go.Pie(labels=df['product'], values=df['sales_amount'])])
-    pie_chart.update_layout(title='Sales by Product')
-    pie_chart_json = pie_chart.to_json()
+            bar_chart = go.Figure(data=[go.Bar(x=[row[0] for row in sales_data], y=[row[1] for row in sales_data])])
+            bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+            pie_chart = go.Figure(data=[go.Pie(labels=[row[0] for row in category_data], values=[row[1] for row in category_data])])
+            pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+            return render_template('index.html', bar_graph_json=bar_chart_json, pie_graph_json=pie_chart_json)
+
+        except Exception as e:
+            print(f"Error fetching data: {e}")  # Log the error for debugging
+            return "Error: Could not fetch data from the database", 500 # Return 500 error
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    init_db() # Initialize the database on startup
+    app.run(debug=True)  # Set debug=False for production
