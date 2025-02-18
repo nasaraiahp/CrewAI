@@ -1,20 +1,19 @@
-# app.py (Flask application)
+# app.py
+import os
 from flask import Flask, render_template, g
 import sqlite3
-import plotly
 import plotly.graph_objs as go
-import json
-import os
+import pandas as pd
 
 app = Flask(__name__)
-DATABASE = 'sales_data.db'  # Define database name globally
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
 
-# Database connection and data retrieval using application context
+# Database setup and management
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
+        db.row_factory = sqlite3.Row  # Access data by column name
     return db
 
 @app.teardown_appcontext
@@ -23,13 +22,6 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
-def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
-
-
 def init_db():
     with app.app_context():
         db = get_db()
@@ -37,39 +29,48 @@ def init_db():
             db.cursor().executescript(f.read())
         db.commit()
 
-# Initialize the database if it doesn't exist
-if not os.path.exists(DATABASE):
-    init_db()
-
-
-# Insert sample data if table is empty
-def insert_sample_data():
+def populate_db():  # Separate data population
     with app.app_context():
-        if not query_db('SELECT * FROM sales LIMIT 1'): # more efficient check if table is empty
-            sample_data = [
-                ('Product A', 1500), ('Product B', 1200), ('Product C', 900),
-                ('Product D', 2100), ('Product E', 1800)
-            ]
-            get_db().executemany('INSERT INTO sales (product, sales) VALUES (?, ?)', sample_data)
-            get_db().commit()
+        db = get_db()
+        dummy_data = [
+            ('Product A', 'Electronics', 1500),
+            ('Product B', 'Clothing', 1200),
+            # ... (rest of the dummy data)
+        ]
+        db.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
+        db.commit()
+
+
+# Initialize database if it doesn't exist
+if not os.path.exists(DATABASE):
+    os.makedirs(app.instance_path, exist_ok=True) # Ensure instance path exists
+    init_db()
+    populate_db()
+
 
 
 # Routes
 @app.route('/')
 def index():
-    insert_sample_data()  # Ensure sample data exists
-    sales_data = query_db('SELECT * FROM sales')
+    return render_template('index.html')
 
-    # Create charts using list comprehensions for efficiency
-    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
-                                       y=[row['sales'] for row in sales_data])])
-    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
-                                       values=[row['sales'] for row in sales_data])])
 
-    # Use dumps once for each chart
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+@app.route('/bar_chart')
+def bar_chart():
+    df = pd.read_sql_query("SELECT * FROM sales", get_db())
+    fig = go.Figure(data=[go.Bar(x=df['product'], y=df['sales_amount'])])
+    graphJSON = fig.to_json()
+    return render_template('bar_chart.html', graphJSON=graphJSON)
+
+
+@app.route('/pie_chart')
+def pie_chart():
+    df = pd.read_sql_query("SELECT category, SUM(sales_amount) AS total_sales FROM sales GROUP BY category", get_db())
+    fig = go.Figure(data=[go.Pie(labels=df['category'], values=df['total_sales'])])
+    graphJSON = fig.to_json()
+    return render_template('pie_chart.html', graphJSON=graphJSON)
+
+
 
 
 if __name__ == '__main__':
