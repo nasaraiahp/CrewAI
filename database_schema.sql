@@ -1,7 +1,5 @@
 -- schema.sql
 CREATE TABLE IF NOT EXISTS sales (
-    product TEXT,
-    category TEXT,
-    sales_quantity INTEGER,
-    sales_amount REAL
+    product TEXT NOT NULL,
+    sales_amount REAL NOT NULL
 );
