@@ -1,4 +1,5 @@
-from flask import Flask, render_template, g  # Import g for database connection management
+# app.py
+from flask import Flask, render_template
 import sqlite3
 import plotly
 import plotly.graph_objs as go
@@ -7,65 +8,69 @@ import os
 
 app = Flask(__name__)
 
-# Configuration (consider moving to a separate config file for better management)
-DATABASE = os.path.join(app.root_path, 'sales_data.db') # Construct absolute database path
-app.config['SECRET_KEY'] = os.urandom(24) # Generate a strong secret key for session management (if needed)
+# Configuration (Best practice to separate configuration)
+app.config['DATABASE'] = os.path.join(app.root_path, 'sales_data.db')  # Store DB within app directory
 
-
-
-# Database connection (improved using g object for better connection handling)
+# Database connection (using app context for better resource management)
 def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE) # Use app.config['DATABASE'] if using a config file
-        g.db.row_factory = sqlite3.Row  # Access data by column names
-    return g.db
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(app.config['DATABASE'])
+        db.row_factory = sqlite3.Row  # For dictionary-like access
+    return db
 
-def close_db(e=None): # Handle closing the database connection after requests
-    db = g.pop('db', None)
+# Initialize database (using a dedicated function and try-except block)
+def init_db():
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('schema.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
+
+# Check if database exists and initialize if not
+def check_and_init_db():
+    if not os.path.exists(app.config['DATABASE']):
+        init_db()
+        populate_db()  # Populate after initializing
+
+
+# Populate database with dummy data
+def populate_db():
+    with app.app_context():
+        db = get_db()
+        dummy_data = [
+            ('Product A', 'Electronics', 100, 5000),
+            ('Product B', 'Clothing', 150, 3000),
+            ('Product C', 'Books', 200, 4000),
+            ('Product D', 'Electronics', 120, 6000),
+            ('Product E', 'Clothing', 80, 2000),
+            ('Product F', 'Books', 180, 3600),
+        ]
+        db.executemany('INSERT INTO sales VALUES (?, ?, ?, ?)', dummy_data)
+        db.commit()
+
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
     if db is not None:
         db.close()
-
-app.teardown_appcontext(close_db) # Register the close_db function to be called after each request
 
 
 @app.route('/')
 def index():
+    check_and_init_db() # Initialize DB if it doesn't exist. Run only once
     db = get_db()
+    
+    bar_data = db.execute("SELECT product, sales_quantity FROM sales").fetchall()
+    pie_data = db.execute("SELECT category, SUM(sales_amount) as total_sales FROM sales GROUP BY category").fetchall()
 
-    # Query data for charts
-    # Use parameterized queries or ORM to prevent SQL injection vulnerabilities
-    try:
-        bar_query = "SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category"
-        bar_data = db.execute(bar_query).fetchall()
-
-        pie_query = "SELECT region, SUM(sales) AS total_sales FROM sales GROUP BY region"
-        pie_data = db.execute(pie_query).fetchall()
-    except Exception as e:  # Handle potential database errors
-        # Log the error appropriately (e.g., to a file or console) in a production environment
-        return render_template("error.html", error=str(e)), 500  # Use custom error template
+    bar_chart = create_bar_chart(bar_data)
+    pie_chart = create_pie_chart(pie_data)
+    return render_template('index.html', bar_chart=bar_chart, pie_chart=pie_chart)
 
 
-    # Data processing (can be optimized if data volume is large)
-    bar_labels = [row['product_category'] for row in bar_data]
-    bar_values = [row['total_sales'] for row in bar_data]
-
-    pie_labels = [row['region'] for row in pie_data]
-    pie_values = [row['total_sales'] for row in pie_data]
-
-
-    # Chart creation
-    bar_chart = go.Figure(data=[go.Bar(x=bar_labels, y=bar_values)])
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-
-    pie_chart = go.Figure(data=[go.Pie(labels=pie_labels, values=pie_values)])
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-
-
-
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
-
-
-
+# ... (chart creation functions remain the same)
 
 if __name__ == '__main__':
-    app.run(debug=False)  # Disable debug mode in production
+    app.run(debug=True)
