@@ -1,4 +1,4 @@
-<!-- templates/index.html -->
+<!-- templates/index.html (Improved) -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,52 +6,17 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Dashboard</h1>
+    <h1>Sales Data Visualization</h1>
 
     <div id="bar-chart"></div>
     <div id="pie-chart"></div>
 
-
-
     <script>
-        // Bar chart
-        fetch('/bar_chart_data')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Network response was not ok: ${response.status}`); // Throw error for non-2xx responses
-                }
-                return response.json(); // Only parse JSON if the response is ok.
-            })
-            .then(data => {
-                Plotly.newPlot('bar-chart', data);
-            })
-            .catch(error => {
-                console.error('Error fetching or plotting bar chart data:', error);
-                // Potentially display a user-friendly error message.
-                const barChartDiv = document.getElementById('bar-chart');
-                barChartDiv.innerHTML = '<p>Error loading bar chart data.</p>'; // Display error message
-            });
+        var bar_graph_data = {{ bar_chart | tojson }};
+        Plotly.newPlot('bar-chart', bar_graph_data); // Use newPlot
 
-        // Pie chart - Similar error handling as the Bar Chart
-        fetch('/pie_chart_data')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Network response was not ok: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                Plotly.newPlot('pie-chart', data);
-            })
-            .catch(error => {
-                console.error('Error fetching or plotting pie chart data:', error);
-                const pieChartDiv = document.getElementById('pie-chart');
-                pieChartDiv.innerHTML = '<p>Error loading pie chart data.</p>';
-            });
-
-
+        var pie_chart_data = {{ pie_chart | tojson }};
+        Plotly.newPlot('pie-chart', pie_chart_data); // Use newPlot
     </script>
-
-
 </body>
 </html>
