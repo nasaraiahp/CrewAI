@@ -1,83 +1,90 @@
-from flask import Flask, render_template, g
-import sqlite3
-import plotly.graph_objs as go
-import json
+import dash
+from dash import dcc
+from dash import html
+from dash.dependencies import Input, Output
+import plotly.express as px
 import pandas as pd
-import os
+import sqlite3
 
-app = Flask(__name__)
+# --- Data Management ---
 
-# Database setup (use environment variables for sensitive data)
-DATABASE = os.environ.get("DATABASE_URL", "sales_data.db")  # Default to local file if environment variable isn't set
+# Use a persistent database file (or other appropriate data source)
+db_path = "sales_data.db"  # Store data in a file
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
 
-# Use a connection pool for database connections
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row # Access data by column name
-    return db
+# Check if the table exists before creating it
+cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sales_data'")
+table_exists = cursor.fetchone()
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+if not table_exists:  # Create the table only if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE sales_data (
+            product TEXT,
+            category TEXT,
+            sales REAL
+        )
+    ''')
 
-def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
+    dummy_data = [
+        ('Product A', 'Category 1', 1500),
+        ('Product B', 'Category 2', 1200),
+        ('Product C', 'Category 1', 2000),
+        ('Product D', 'Category 3', 800),
+        ('Product E', 'Category 2', 1800),
+        ('Product F', 'Category 3', 950),
+        ('Product G', 'Category 1', 1100),
+        ('Product H', 'Category 2', 2300),
+        ('Product I', 'Category 3', 1600)
+    ]
+    cursor.executemany('INSERT INTO sales_data VALUES (?,?,?)', dummy_data)
+    conn.commit()
 
-
-
-def create_tables():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f: # Execute schema from file
-            db.cursor().executescript(f.read())
-        db.commit()
-
-
-def populate_data(): # Dummy Data
-    with app.app_context():
-        db = get_db()
-        sample_data = [
-            ('Product A', 'Category 1', 1200),
-            ('Product B', 'Category 2', 850),
-            ('Product C', 'Category 1', 1550),
-            ('Product D', 'Category 3', 900),
-            ('Product E', 'Category 2', 1100),
-            ('Product F', 'Category 1', 1700),
-            ('Product G', 'Category 2', 780),
-            ('Product H', 'Category 3', 1050),
-        ]
-
-        db.executemany("INSERT INTO sales (product, category, sales_amount) VALUES (?, ?, ?)", sample_data)
-        db.commit()
+# Close the initial connection after setup. Reopen in callback for each query.
+conn.close()
 
 
 
+# --- Dash App ---
 
-@app.route('/')
-def index():
-    with app.app_context():
-        df = pd.read_sql_query("SELECT * from sales", get_db())
+app = dash.Dash(__name__)
+server = app.server  # Expose the Flask server
 
-        # Bar chart
-        bar_chart = go.Figure(data=[go.Bar(x=df['product'], y=df['sales_amount'])])
-        bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-        # Pie chart
-        pie_chart = go.Figure(data=[go.Pie(labels=df['category'], values=df['sales_amount'])])
-        pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+app.layout = html.Div([
+    html.H1("Sales Dashboard"),
+    dcc.Dropdown(
+        id='chart-type',
+        options=[{'label': i, 'value': i} for i in ['Bar Chart', 'Pie Chart']],
+        value='Bar Chart',
+        clearable=False
+    ),
+    dcc.Graph(id='sales-chart')
+])
 
-        return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+
+@app.callback(
+    Output('sales-chart', 'figure'),
+    Input('chart-type', 'value'))
+def update_graph(chart_type):
+    # Establish connection inside the callback function
+    conn = sqlite3.connect(db_path)  # Connect each time data is needed.
+    try:
+        df = pd.read_sql_query("SELECT * from sales_data", conn)
+        if chart_type == 'Bar Chart':
+            fig = px.bar(df, x='product', y='sales', color='category',
+                         title="Sales by Product and Category")
+        elif chart_type == 'Pie Chart':
+            fig = px.pie(df, values='sales', names='category',
+                         title="Sales Distribution by Category")
+        else:
+            fig = {}  # Default empty figure
+
+        return fig
+    finally:
+        conn.close()  # Close the connection in a finally block to ensure closure.
 
 
 
 if __name__ == '__main__':
-    create_tables()  # Call this once to create tables initially
-    #populate_data() # Run this only once to populate with sample data for testing
-    app.run(debug=True)
+    app.run_server(debug=True)
