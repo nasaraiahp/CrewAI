@@ -1,7 +1,6 @@
--- schema.sql
-CREATE TABLE IF NOT EXISTS sales (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product TEXT NOT NULL,
-    category TEXT NOT NULL,
-    sales_amount REAL NOT NULL
+# schema.sql
+DROP TABLE IF EXISTS sales;
+CREATE TABLE sales (
+    product TEXT NOT NULL PRIMARY KEY,
+    sales_quantity INTEGER
 );
