@@ -13,10 +13,15 @@
     <h2>Sales by Category</h2>
     <div id="pie-chart"></div>
 
-    <script>
-        Plotly.newPlot('bar-chart', {{bar_chart | safe}});
-        Plotly.newPlot('pie-chart', {{pie_chart | safe}});
-    </script>
 
+    <script>
+        var bar_chart_data = JSON.parse('{{ bar_chart | safe }}'); // Parse JSON string
+        Plotly.newPlot('bar-chart', bar_chart_data);
+
+
+        var pie_chart_data = JSON.parse('{{ pie_chart | safe }}'); // Parse JSON string
+        Plotly.newPlot('pie-chart', pie_chart_data);
+
+    </script>
 </body>
 </html>
