@@ -1,98 +1,76 @@
 # app.py
-import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
-import plotly.express as px
-import pandas as pd
-import sqlite3
-
-# Database setup (better practice to separate this into a dedicated file/function)
-DATABASE = 'sales_data.db'
-
-def create_database():
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales (
-            region TEXT,
-            product TEXT,
-            sales INTEGER
-        )
-    ''')
-
-    sample_data = [
-        ('North', 'Product A', 1200),
-        ('North', 'Product B', 850),
-        ('East', 'Product A', 1500),
-        ('East', 'Product B', 1100),
-        ('South', 'Product A', 900),
-        ('South', 'Product B', 700),
-        ('West', 'Product A', 1000),
-        ('West', 'Product B', 950),
-    ]
-    cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
-    conn.commit()
-    conn.close()
-
-
-# Create the database if it doesn't exist.  Check first to avoid re-creating if the .db file exists.
 import os
-if not os.path.exists(DATABASE):
-    create_database()
+from flask import Flask, render_template, request
+import sqlite3
+import plotly.graph_objs as go
+import pandas as pd
+
+app = Flask(__name__)
+
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance path exists
+    with app.app_context():  # access the app context inside this function
+        conn = get_db_connection()
+        with app.open_resource('schema.sql', mode='r') as f:
+            conn.executescript(f.read())
+        conn.commit()
+        conn.close()
 
 
-def get_sales_data(selected_product):
-    """Retrieves sales data for a given product from the database."""
-    try:  # Incorporate basic error handling
-        with sqlite3.connect(DATABASE) as conn: # Use connection context manager
-            df = pd.read_sql_query("SELECT * FROM sales WHERE product = ?", conn, params=(selected_product,))
-        return df
-    except Exception as e:  # Handle potential exceptions
-        print(f"Database Error: {e}")
-        return pd.DataFrame() # Return empty DataFrame on error
+@app.route('/', methods=['GET', 'POST'])
+def dashboard():
+    conn = get_db_connection()
+    df_bar = df_pie = pd.DataFrame()  # Initialize even if query fails
+    error = None
+    chart_types = {'bar': 'Sales by Product Category', 'pie': 'Sales Distribution by Region'}
 
-# Initialize the Dash app
-app = dash.Dash(__name__)
 
-# Layout of the dashboard (no changes needed here)
-app.layout = html.Div(children=[
-    html.H1(children="Sales Dashboard"),
-    html.Div([
-        dcc.Dropdown(
-            id='product-dropdown',
-            options=[{'label': i, 'value': i} for i in ['Product A', 'Product B']],
-            value='Product A'
-        )
-    ]),
-    dcc.Graph(id='sales-bar-chart'),
-    dcc.Graph(id='sales-pie-chart')
-])
+    if request.method == 'POST':
+        selected_chart_type = request.form.get('chart_type')
+        if selected_chart_type not in chart_types:  # Validate input
+            error = "Invalid chart type selected"
 
-# Callbacks (now using the get_sales_data function)
-@app.callback(
-    Output('sales-bar-chart', 'figure'),
-    Input('product-dropdown', 'value')
-)
-def update_bar_chart(selected_product):
-    df = get_sales_data(selected_product)
-    if df.empty:
-        return px.bar(title=f"Error Retrieving Data for {selected_product}") # Display error message in chart
-    fig = px.bar(df, x='region', y='sales', title=f'Sales of {selected_product} by Region')
-    return fig
+    selected_chart_type = request.form.get('chart_type', 'bar')  # Default to 'bar'
 
-@app.callback(
-    Output('sales-pie-chart', 'figure'),
-    Input('product-dropdown', 'value')
-)
-def update_pie_chart(selected_product):
-    df = get_sales_data(selected_product)
-    if df.empty:
-        return px.pie(title=f"Error Retrieving Data for {selected_product}") # Display error message in chart
-    fig = px.pie(df, values='sales', names='region', title=f'Sales Distribution of {selected_product}')
-    return fig
+
+    try:
+        if selected_chart_type == 'bar':
+            df_bar = pd.read_sql_query("SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category", conn)
+
+        elif selected_chart_type == 'pie':
+            df_pie = pd.read_sql_query("SELECT region, SUM(sales) AS total_sales FROM sales GROUP BY region", conn)
+
+
+    except sqlite3.Error as e:  # Catch db errors
+        error = f"Database error: {e}"
+    finally: # Always close after use
+        conn.close()
+
+    # Create charts only if data is available
+    bar_chart_json = pie_chart_json = None
+
+    if not df_bar.empty:
+        bar_chart = go.Figure(data=[go.Bar(x=df_bar['product_category'], y=df_bar['total_sales'])])
+        bar_chart.update_layout(title=chart_types.get('bar', 'Bar Chart')) # Use dict to lookup
+        bar_chart_json = bar_chart.to_json()
+    
+    if not df_pie.empty:
+        pie_chart = go.Figure(data=[go.Pie(labels=df_pie['region'], values=df_pie['total_sales'])])
+        pie_chart.update_layout(title=chart_types.get('pie', 'Pie Chart'))
+        pie_chart_json = pie_chart.to_json()
+
+
+    return render_template('dashboard.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json, chart_types=chart_types, selected_chart_type=selected_chart_type, error=error)
+
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    init_db() # Initialize the database
+    app.run(debug=True)
