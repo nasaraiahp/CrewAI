@@ -1,82 +1,62 @@
-# app.py (Flask application)
-from flask import Flask, render_template, request, jsonify
+# app.py (Improved)
+from flask import Flask, render_template
 import sqlite3
+import plotly
 import plotly.graph_objs as go
-import json
-import pandas as pd
-import os
 
 app = Flask(__name__)
 
-# Database setup
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+# Database setup (replace with your actual database path)
+DATABASE = 'sales_data.db'
 
 def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Access data by column name
-    return conn
+    try:
+        conn = sqlite3.connect(DATABASE)
+        conn.row_factory = sqlite3.Row  # Access data by column name
+        return conn
+    except sqlite3.Error as e:
+        print(f"Database error: {e}") # Log the error for debugging
+        return None # Or handle the error appropriately for your application
 
-# Create the database if it doesn't exist
-def create_database():
-    if not os.path.exists(app.instance_path):
-        os.makedirs(app.instance_path)
-
-    conn = get_db_connection()
-    with app.open_resource('sales_data.sql', mode='r') as f:
-        conn.executescript(f.read())  # Execute SQL schema
-    conn.close()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
-
-@app.route('/data')
-def data():
     conn = get_db_connection()
+    if conn is None:
+        return "Database error", 500 # Return an error response
+
     try:
-        df = pd.read_sql_query("SELECT * FROM sales", conn)
-    except Exception as e:  # Handle potential database errors
-        print(f"Database error: {e}")  # Log error for debugging
-        return jsonify({"error": "Database error"}), 500  # Return error to client
+        # Using parameterized query to prevent SQL injection (even though not strictly needed here, it demonstrates best practice)
+        sales_data = conn.execute('SELECT * FROM sales').fetchall()
+
+    except sqlite3.Error as e:
+        print(f"Error fetching data: {e}")
+        return "Error fetching data", 500
     finally:
-        conn.close()  # Ensure connection is closed even if error
+        conn.close()  # Ensure connection is always closed
+
+    # Data for Plotly charts
+    product_categories = [row['product_category'] for row in sales_data]
+    sales_figures = [row['sales'] for row in sales_data]
+    profit_margins = [row['profit'] for row in sales_data]  # Added profit data
+
+    # Create Bar Chart
+    bar_chart = {
+        "data": [go.Bar(x=product_categories, y=sales_figures)],
+        "layout": go.Layout(title="Sales by Product Category")
+    }
+
+    # Create Pie Chart (using profit data)
+    pie_chart = {
+        "data": [go.Pie(labels=product_categories, values=profit_margins)],  # Profit pie chart
+        "layout": go.Layout(title="Profit Distribution by Category")
+    }
 
 
-    return df.to_json(orient='records')
 
+    return render_template('index.html', bar_chart=bar_chart, pie_chart=pie_chart)
 
-@app.route('/bar_chart_data')
-def bar_chart_data():
-    conn = get_db_connection()
-    try:
-        df = pd.read_sql_query("SELECT product_category, SUM(sales_amount) AS total_sales FROM sales GROUP BY product_category", conn)
-        fig = go.Figure(data=[go.Bar(x=df['product_category'], y=df['total_sales'])])
-        graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-        return graphJSON
-    except Exception as e:  # Handle potential database errors
-        print(f"Database error: {e}")
-        return jsonify({"error": "Database error"}), 500
-    finally:
-        conn.close()
-
-
-
-@app.route('/pie_chart_data')
-def pie_chart_data():
-    conn = get_db_connection()
-    try:
-        df = pd.read_sql_query("SELECT sales_region, SUM(sales_amount) AS total_sales FROM sales GROUP BY sales_region", conn)
-        fig = go.Figure(data=[go.Pie(labels=df['sales_region'], values=df['total_sales'], hole=.3)])
-        graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-        return graphJSON
-
-    except Exception as e:  # Handle potential database errors
-        print(f"Database error: {e}")
-        return jsonify({"error": "Database error"}), 500
-    finally:
-        conn.close()
 
 
 if __name__ == '__main__':
-    create_database()  # Create database on startup if it doesn't exist.
-    app.run(debug=True) # Set debug=False for Production
+    app.run(debug=True)
