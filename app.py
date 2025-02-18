@@ -1,86 +1,87 @@
-from flask import Flask, render_template, g
+# app.py
+import dash
+from dash import dcc
+from dash import html
+from dash.dependencies import Input, Output
+import plotly.express as px
+import pandas as pd
 import sqlite3
-import plotly
-import plotly.graph_objs as go
-import json
 import os
 
-app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+# Database setup (best practice to externalize configuration)
+DATABASE_URL = os.environ.get("DATABASE_URL", "sales_data.db")  # Use environment variable for Heroku
 
-# Configuration for secret key (important for security in production)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'your-secret-key' # Get from OS environment variable, or use default for development
+# Create a connection function for reusability and better resource management
+def get_db_connection():
+    return sqlite3.connect(DATABASE_URL)
 
+# Initialize database if it doesn't exist (check outside the main app logic)
+with get_db_connection() as conn:
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            product TEXT,
+            sales_quantity INTEGER,
+            sales_region TEXT
+        )
+    ''')
 
-def get_db():
-    """Establishes a database connection if one doesn't exist, and reuses it if it does."""
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row  # Return rows as dictionaries
-    return db
-
-
-@app.teardown_appcontext
-def close_connection(exception):
-    """Closes the database connection at the end of the request."""
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
-
-
-def query_db(query, args=(), one=False):
-    """Executes a database query."""
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
-
-
-@app.route('/')
-def index():
-    sales_data = query_db('SELECT * FROM sales')
-
-    bar_chart = create_bar_chart(sales_data)
-    pie_chart = create_pie_chart(sales_data)
-
-    return render_template('index.html', bar_chart=bar_chart, pie_chart=pie_chart)
+    # Check if table is empty before inserting sample data. This prevents duplicates on each run.
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0: # Check if the table is empty. If it is, then populate table.
+        sample_data = [
+            ('Product A', 100, 'North America'),
+            ('Product B', 150, 'Europe'),
+            ('Product C', 200, 'Asia'),
+            ('Product A', 75, 'Europe'),
+            ('Product B', 120, 'North America'),
+            ('Product C', 180, 'Asia'),
+            ('Product D', 90, 'North America'),
+            ('Product E', 110, 'Europe')
+        ]
+        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
+        conn.commit()
 
 
-def create_bar_chart(sales_data):
-    products = [row['product'] for row in sales_data]
-    sales = [row['sales'] for row in sales_data]
 
-    fig = go.Figure(data=[go.Bar(x=products, y=sales)])
-    fig.update_layout(title='Sales by Product')
-    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
+app = dash.Dash(__name__)
+server = app.server  # For gunicorn/heroku deployment
+
+app.layout = html.Div(children=[
+    html.H1(children="Sales Dashboard"),
+
+    html.Div([
+        html.Label("Select Sales Region:"),
+        dcc.Dropdown(
+            id='region-dropdown',
+            options=[{'label': i, 'value': i} for i in ['All', 'North America', 'Europe', 'Asia']],
+            value='All'
+        )
+    ], style={'width': '30%', 'display': 'inline-block'}),
+
+    dcc.Graph(id='sales-bar-chart'),
+    dcc.Graph(id='sales-pie-chart')
+])
 
 
-def create_pie_chart(sales_data):
-    products = [row['product'] for row in sales_data]
-    sales = [row['sales'] for row in sales_data]
+@app.callback(
+    [Output('sales-bar-chart', 'figure'),
+     Output('sales-pie-chart', 'figure')],
+    [Input('region-dropdown', 'value')]
+)
+def update_charts(selected_region):
+    with get_db_connection() as conn:  # Context manager ensures connection is closed
+        df = pd.read_sql_query("SELECT * FROM sales", conn)
+        
+    if selected_region != 'All':
+        df = df[df['sales_region'] == selected_region]
 
-    fig = go.Figure(data=[go.Pie(labels=products, values=sales)])
-    fig.update_layout(title='Sales Distribution')
-    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
+    bar_fig = px.bar(df, x='product', y='sales_quantity', title="Sales by Product")
+    pie_fig = px.pie(df, values='sales_quantity', names='product', title='Sales Distribution by Product')
+
+    return bar_fig, pie_fig
 
 
-def init_db():
-    """Initializes the database from the schema file."""
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-# Create the instance folder if it doesn't exist
-os.makedirs(app.instance_path, exist_ok=True)
-
-# Check if the database exists and create it if it doesn't
-if not os.path.exists(DATABASE):
-    init_db()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run_server(debug=True)
