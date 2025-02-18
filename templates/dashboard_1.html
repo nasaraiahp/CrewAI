@@ -7,12 +7,17 @@
 </head>
 <body>
     <h1>Sales Dashboard</h1>
+
+    <h2>Bar Chart</h2>
     <div id="bar-chart"></div>
+
+    <h2>Pie Chart</h2>
     <div id="pie-chart"></div>
 
     <script>
-        Plotly.newPlot('bar-chart', {{plot1 | safe}});
-        Plotly.newPlot('pie-chart', {{plot2 | safe}});       
+        Plotly.newPlot('bar-chart', {{bar_chart | safe}});
+        Plotly.newPlot('pie-chart', {{pie_chart | safe}});
     </script>
+
 </body>
 </html>
