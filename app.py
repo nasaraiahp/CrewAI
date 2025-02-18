@@ -1,4 +1,5 @@
-from flask import Flask, render_template, g
+# app.py
+from flask import Flask, render_template
 import sqlite3
 import plotly
 import plotly.graph_objs as go
@@ -6,51 +7,67 @@ import json
 import os
 
 app = Flask(__name__)
-DATABASE = 'sales_data.db'  # Define database path
 
-# Database setup (using SQLite)
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-    return db
+# Database setup
+DATABASE = 'sales_data.db'  # Store database name as a constant
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+def get_db_connection():
+    """Establishes a connection to the database."""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # Access data by column name
+    return conn
 
-def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
+def create_tables():
+    """Creates the necessary tables if they don't exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            product TEXT PRIMARY KEY,  -- Add primary key for efficiency
+            sales INTEGER
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-# Check if the database file exists and create it if it doesn't
-if not os.path.exists(DATABASE):
-    init_db()
-
+def insert_dummy_data():
+    """Inserts dummy data if the table is empty."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:  # Check if table is empty
+        dummy_data = [
+            ('Product A', 1200),
+            ('Product B', 850),
+            ('Product C', 1550),
+            ('Product D', 900),
+            ('Product E', 1100),
+        ]
+        cursor.executemany("INSERT INTO sales VALUES (?, ?)", dummy_data)
+        conn.commit()
+    conn.close()
 
 
 @app.route('/')
 def index():
-    bar_data = query_db("SELECT product, sales_quantity FROM sales")
-    bar_chart = go.Figure(data=[go.Bar(x=[row[0] for row in bar_data], y=[row[1] for row in bar_data])])
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    create_tables()
+    insert_dummy_data()
 
-    pie_data = query_db("SELECT category, SUM(sales_quantity) FROM sales GROUP BY category")
-    pie_chart = go.Figure(data=[go.Pie(labels=[row[0] for row in pie_data], values=[row[1] for row in pie_data])])
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    conn = get_db_connection()
+    sales_data = conn.execute("SELECT * FROM sales").fetchall()
+    conn.close()
 
-    return render_template('index.html', bar_chart_json=bar_chart_json, pie_chart_json=pie_chart_json)
+    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
+                                       y=[row['sales'] for row in sales_data])])  # Use column names
+    bar_chart_JSON = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
+                                       values=[row['sales'] for row in sales_data])])   # Use column names
+    pie_chart_JSON = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+    return render_template('index.html', bar_graphJSON=bar_chart_JSON, pie_graphJSON=pie_chart_JSON)
+
 
 if __name__ == '__main__':
-    app.run(debug=True) # Never enable debug mode in production
+    app.run(debug=True)
