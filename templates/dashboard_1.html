@@ -1,3 +1,4 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,13 +7,12 @@
 </head>
 <body>
     <h1>Sales Dashboard</h1>
-
     <div id="bar-chart"></div>
     <div id="pie-chart"></div>
 
     <script>
-        Plotly.newPlot('bar-chart', {{bar_graph_json | safe}});
-        Plotly.newPlot('pie-chart', {{pie_graph_json | safe}});
+        Plotly.newPlot('bar-chart', {{plot1 | safe}});
+        Plotly.newPlot('pie-chart', {{plot2 | safe}});       
     </script>
 </body>
 </html>
