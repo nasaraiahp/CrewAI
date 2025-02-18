@@ -1,5 +1,4 @@
-# app.py
-from flask import Flask, render_template, g
+from flask import Flask, render_template, request, jsonify
 import sqlite3
 import plotly
 import plotly.graph_objs as go
@@ -7,72 +6,49 @@ import json
 import os
 
 app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'data.db')  # Store database in instance folder
 
-# Database connection
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
+# Database configuration (better practice than global variable)
+app.config['DATABASE'] = os.path.join(app.instance_path, 'sales_data.db')  # Store in instance folder
+os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance folder exists
 
-# Close database connection at the end of each request
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
 
-# Execute SQL query
-def query_db(query, args=(), one=False):
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
-
-# Initialize database
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-# Populate database (run only once initially)
-def populate_db():
-    sample_data = [
-        ('Product A', 150),
-        ('Product B', 200),
-        ('Product C', 100),
-        ('Product D', 250),
-        ('Product E', 180),
-    ]
-    query_db("INSERT INTO sales (product, sales_quantity) VALUES (?, ?)", sample_data, one=False)
-
+def get_db_connection():
+    conn = sqlite3.connect(app.config['DATABASE'])
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 @app.route('/')
 def index():
-    sales_data = query_db("SELECT * FROM sales")
+    with get_db_connection() as conn:  # Use with statement for automatic closing
+        sales_data = conn.execute('SELECT product, sales, region FROM sales').fetchall() # Only select needed columns
 
-    # Create Bar Chart
-    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
-                                        y=[row['sales_quantity'] for row in sales_data])])
-    bar_chart.update_layout(title_text='Product Sales')
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    bar_chart = create_bar_chart(sales_data)
+    pie_chart = create_pie_chart(sales_data)
 
-    # Create Pie Chart
-    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
-                                        values=[row['sales_quantity'] for row in sales_data])])
-    pie_chart.update_layout(title_text='Product Sales Distribution')
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    return render_template('index.html', bar_graphJSON=bar_chart, pie_graphJSON=pie_chart)
 
-    return render_template('index.html',
-                           bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
-if __name__ == "__main__":
-    os.makedirs(app.instance_path, exist_ok=True) # Ensure instance path exists
-    init_db()
-    populate_db() # Uncomment for initial data population. Comment out afterwards.
-    app.run(debug=True)
+def create_bar_chart(data):
+    # Using list comprehensions is efficient
+    products = [row['product'] for row in data]
+    sales = [row['sales'] for row in data]
+
+    fig = go.Figure(data=[go.Bar(x=products, y=sales)])
+    fig.update_layout(title_text='Product Sales')
+    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    return graphJSON
+
+
+def create_pie_chart(data):
+    regions = [row['region'] for row in data]
+    sales = [row['sales'] for row in data]
+
+    fig = go.Figure(data=[go.Pie(labels=regions, values=sales)])
+    fig.update_layout(title_text='Sales by Region')
+    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    return graphJSON
+
+
+if __name__ == '__main__':
+    app.run(debug=False) # Disable debug mode in production
