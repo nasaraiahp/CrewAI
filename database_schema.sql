@@ -1,22 +1,17 @@
--- sales_data.sql (SQLite database schema and data)
-
-CREATE TABLE IF NOT EXISTS sales (
-    sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_name TEXT NOT NULL,
-    product_category TEXT NOT NULL,
-    sales_amount REAL NOT NULL,
-    sales_region TEXT NOT NULL,
-    sale_date DATE 
+CREATE TABLE sales (
+    product_id INTEGER PRIMARY KEY, -- Removed AUTOINCREMENT for clarity; INTEGER PRIMARY KEY implies AUTOINCREMENT in SQLite
+    product_name TEXT NOT NULL CHECK (length(product_name) > 0), -- Add a check for non-empty product names
+    category TEXT NOT NULL CHECK (length(category) > 0), -- Add a check for non-empty categories
+    sales_quantity INTEGER NOT NULL CHECK (sales_quantity >= 0), -- Ensure sales quantity is non-negative
+    sales_revenue REAL NOT NULL CHECK (sales_revenue >= 0) -- Ensure sales revenue is non-negative
 );
 
-INSERT OR IGNORE INTO sales (product_name, product_category, sales_amount, sales_region, sale_date) VALUES
-('Product A', 'Electronics', 1200, 'North', '2024-01-05'),
-('Product B', 'Clothing', 800, 'East', '2024-01-12'),
-('Product C', 'Electronics', 1500, 'West', '2024-01-19'),
-('Product D', 'Furniture', 2000, 'South', '2024-01-26'),
-('Product E', 'Clothing', 900, 'North', '2024-02-02'),
-('Product F', 'Electronics', 1100, 'East', '2024-02-09'),
-('Product G', 'Furniture', 1700, 'West', '2024-02-16'),
-('Product H', 'Clothing', 750, 'South', '2024-02-23'),
-('Product I', 'Electronics', 1400, 'North', '2024-03-01'),
-('Product J', 'Furniture', 1900, 'East', '2024-03-08');
+INSERT INTO sales (product_name, category, sales_quantity, sales_revenue) VALUES
+('Product A', 'Electronics', 120, 25000.00),
+('Product B', 'Clothing', 200, 15000.00),
+('Product C', 'Books', 80, 8000.00),
+('Product D', 'Electronics', 150, 30000.00),
+('Product E', 'Clothing', 250, 20000.00),
+('Product F', 'Books', 50, 4000.00),
+('Product G', 'Electronics', 100, 22000.00),
+('Product H', 'Clothing', 180, 12000.00);
