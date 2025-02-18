@@ -8,16 +8,19 @@
 <body>
     <h1>Sales Dashboard</h1>
 
-    <h2>Sales by Product</h2>
+    <h2>Bar Chart</h2>
     <div id="bar-chart"></div>
 
-    <h2>Sales by Category</h2>
+    <h2>Pie Chart</h2>
     <div id="pie-chart"></div>
 
-    <script>
-        Plotly.newPlot('bar-chart', {{bar_chart | safe}});
-        Plotly.newPlot('pie-chart', {{pie_chart | safe}});
+<script>
+    var bar_graph = {{bar_chart | safe}};
+    Plotly.newPlot('bar-chart', bar_graph); // Use newPlot for better performance
 
-    </script>
+    var pie_graph = {{pie_chart | safe}};
+    Plotly.newPlot('pie-chart', pie_graph); // Use newPlot
+</script>
+
 </body>
 </html>
