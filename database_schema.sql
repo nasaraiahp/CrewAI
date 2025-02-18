@@ -1,6 +1,8 @@
-# schema.sql
-DROP TABLE IF EXISTS sales;
-CREATE TABLE sales (
-    product TEXT NOT NULL PRIMARY KEY,
-    sales_quantity INTEGER
+CREATE TABLE IF NOT EXISTS sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product TEXT NOT NULL,
+    sales INTEGER NOT NULL,
+    region TEXT NOT NULL,
+    UNIQUE(product, region) -- Example: Ensure unique product/region combinations
 );
+-- ... rest of the insert statements ...
