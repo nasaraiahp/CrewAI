@@ -1,28 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
     <title>Sales Dashboard</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Dashboard</h1>
+    <h1>Sales Data Visualization</h1>
 
-    <h2>Sales by Product (Bar Chart)</h2>
+    <h2>Bar Chart</h2>
     <div id="bar-chart"></div>
 
-    <h2>Sales Distribution (Pie Chart)</h2>
+    <h2>Pie Chart</h2>
     <div id="pie-chart"></div>
 
 
     <script>
-        var bar_chart_data = {{ bar_chart | safe }};
-        Plotly.newPlot('bar-chart', bar_chart_data.data, bar_chart_data.layout);
+        var bar_chart_data = JSON.parse('{{bar_chart | safe}}'); // Parse JSON string
+        Plotly.newPlot('bar-chart', bar_chart_data);
 
-        var pie_chart_data = {{ pie_chart | safe }};
-        Plotly.newPlot('pie-chart', pie_chart_data.data, pie_chart_data.layout);
+
+        var pie_chart_data = JSON.parse('{{pie_chart | safe}}'); // Parse JSON string
+        Plotly.newPlot('pie-chart', pie_chart_data);
 
     </script>
-
 </body>
 </html>
