@@ -1,8 +1,12 @@
+-- schema.sql
 CREATE TABLE IF NOT EXISTS sales (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    product TEXT NOT NULL,
-    sales INTEGER NOT NULL,
-    region TEXT NOT NULL,
-    UNIQUE(product, region) -- Example: Ensure unique product/region combinations
+    product TEXT PRIMARY KEY,
+    sales INTEGER
 );
--- ... rest of the insert statements ...
+
+INSERT OR IGNORE INTO sales (product, sales) VALUES
+('Product A', 100),
+('Product B', 150),
+('Product C', 75),
+('Product D', 200),
+('Product E', 120);
