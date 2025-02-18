@@ -4,79 +4,77 @@ from dash import dcc
 from dash import html
 from dash.dependencies import Input, Output
 import plotly.express as px
-import pandas as pd
 import sqlite3
-import os
+import pandas as pd
 
-# Database setup (using a separate function for better organization)
-def setup_database(db_path):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales (
-            product TEXT,
-            category TEXT,
-            sales_quantity INTEGER,
-            sales_amount REAL
-        )
-    ''')
-
-    dummy_data = [
-        ('Product A', 'Electronics', 100, 5000),
-        ('Product B', 'Clothing', 50, 2500),
-        ('Product C', 'Electronics', 75, 3750),
-        ('Product D', 'Clothing', 120, 6000),
-        ('Product E', 'Books', 200, 4000),
-        ('Product F', 'Books', 80, 1600),
-    ]
-
-    cursor.executemany("INSERT OR IGNORE INTO sales VALUES (?, ?, ?, ?)", dummy_data)
-    conn.commit()
-    conn.close()  # Close the connection after setup
-    return db_path
-
-
-# ---  Configuration and Database ---
-DATABASE_PATH = os.path.join(os.getcwd(), 'sales_data.db')  # More robust path handling
-setup_database(DATABASE_PATH)  # Call the database setup function
-
-
-# --- Dash App ---
 app = dash.Dash(__name__)
 
-# Data Loading (outside the layout for efficiency – only loads once)
-conn = sqlite3.connect(DATABASE_PATH) # Connect once per app instance
-df = pd.read_sql_query("SELECT * FROM sales", conn)
-conn.close()  # Important to close connection once you got data
-available_categories = df['category'].unique()
+# Database setup (using a temporary in-memory database for better security in this example)
+conn = sqlite3.connect(':memory:')  # Use an in-memory database for demonstration
+# For a persistent database, use a file path: conn = sqlite3.connect('sales_data.db')
+cursor = conn.cursor()
 
-app.layout = html.Div([
-    html.H1("Sales Dashboard"),
-    dcc.Dropdown(
-        id='category-dropdown',
-        options=[{'label': i, 'value': i} for i in available_categories],
-        value=available_categories[0],  # Set a default value
-        clearable=False  # Prevent clearing the selection
-    ),
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS sales (
+        region TEXT,
+        product TEXT,
+        sales_amount REAL
+    )
+''')
+
+# Dummy data (replace with your actual data loading logic)
+dummy_data = [
+    ('North', 'Product A', 1200),
+    ('North', 'Product B', 850),
+    ('South', 'Product A', 1500),
+    ('South', 'Product C', 1000),
+    ('East', 'Product B', 900),
+    ('East', 'Product C', 1100),
+    ('West', 'Product A', 1800),
+    ('West', 'Product D', 700),
+]
+cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
+conn.commit()
+
+
+app.layout = html.Div(children=[
+    html.H1(children="Sales Dashboard"),
+
+    html.Div([
+        html.Label("Select Region:"),
+        dcc.Dropdown(
+            id='region-dropdown',
+            options=[{'label': region, 'value': region} for region in pd.read_sql_query("SELECT DISTINCT region FROM sales", conn)['region'].unique()],
+            value=[],  # Initialize with an empty list for multi-select
+            multi=True
+        )
+    ]),
+
     dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart'),
+    dcc.Graph(id='pie-chart')
+
 ])
 
-
 @app.callback(
-    Output('bar-chart', 'figure'),
-    Output('pie-chart', 'figure'),
-    Input('category-dropdown', 'value')
+    [Output('bar-chart', 'figure'), Output('pie-chart', 'figure')],
+    [Input('region-dropdown', 'value')]
 )
-def update_charts(selected_category):
-    filtered_df = df[df['category'] == selected_category]  # df is pre-loaded now
+def update_charts(selected_regions):
+    if selected_regions:  # Handle the case where no region is selected
+        query = "SELECT * FROM sales WHERE region IN ({})".format(','.join('?' * len(selected_regions)))
+        df = pd.read_sql_query(query, conn, params=selected_regions)
+    else:
+        df = pd.read_sql_query("SELECT * FROM sales", conn)  # Query all data if no selection
 
-    bar_fig = px.bar(filtered_df, x='product', y='sales_quantity', title=f'Sales Quantity by Product (Category: {selected_category})')
-    pie_fig = px.pie(filtered_df, values='sales_amount', names='product', title=f'Sales Amount by Product (Category: {selected_category})')
 
-    return bar_fig, pie_fig
+    bar_fig = px.bar(df, x='product', y='sales_amount', color='region', 
+                     title="Sales by Product and Region")
 
+    pie_fig = px.pie(df, values='sales_amount', names='region', 
+                     title="Sales Distribution by Region")
+
+
+    return bar_fig, pie_chart
 
 if __name__ == '__main__':
     app.run_server(debug=True)
