@@ -1,18 +1,20 @@
 # app.py (Flask application)
-import sqlite3
-import json
 from flask import Flask, render_template, g
+import sqlite3
 import plotly
 import plotly.graph_objs as go
+import json
+import os
 
 app = Flask(__name__)
-DATABASE = 'sales_data.db'  # Store database name as a constant
+DATABASE = 'sales_data.db'  # Define database name globally
 
-# Database setup (using a function to get the database connection)
+# Database connection and data retrieval using application context
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
     return db
 
 @app.teardown_appcontext
@@ -20,6 +22,12 @@ def close_connection(exception):
     db = getattr(g, '_database', None)
     if db is not None:
         db.close()
+
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 
 def init_db():
@@ -29,60 +37,40 @@ def init_db():
             db.cursor().executescript(f.read())
         db.commit()
 
-# Initialize the database if it doesn't exist. Check for table existence instead of row count.
-try:
+# Initialize the database if it doesn't exist
+if not os.path.exists(DATABASE):
+    init_db()
+
+
+# Insert sample data if table is empty
+def insert_sample_data():
     with app.app_context():
-        db = get_db()
-        db.execute("SELECT * FROM sales LIMIT 1") # Check if the table exists
-except sqlite3.OperationalError:
-    init_db() # Initialize the database if the table does not exist
+        if not query_db('SELECT * FROM sales LIMIT 1'): # more efficient check if table is empty
+            sample_data = [
+                ('Product A', 1500), ('Product B', 1200), ('Product C', 900),
+                ('Product D', 2100), ('Product E', 1800)
+            ]
+            get_db().executemany('INSERT INTO sales (product, sales) VALUES (?, ?)', sample_data)
+            get_db().commit()
 
 
+# Routes
 @app.route('/')
 def index():
-    return render_template('index.html')
+    insert_sample_data()  # Ensure sample data exists
+    sales_data = query_db('SELECT * FROM sales')
 
+    # Create charts using list comprehensions for efficiency
+    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
+                                       y=[row['sales'] for row in sales_data])])
+    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
+                                       values=[row['sales'] for row in sales_data])])
 
-@app.route('/data')
-def data():
-    db = get_db()
-    cursor = db.cursor()
-
-    # Fetch sales data for bar chart
-    cursor.execute("SELECT product, sales_quantity FROM sales")
-    sales_data = cursor.fetchall()
-
-    bar_chart = go.Figure(data=[go.Bar(x=[row[0] for row in sales_data], y=[row[1] for row in sales_data])])
+    # Use dumps once for each chart
     bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-
-    # Sales by category (for pie chart) – using parameterized query for potential future dynamic category input.  Not strictly necessary here, but demonstrates the principle.
-    cursor.execute("SELECT category, SUM(sales_quantity) FROM sales GROUP BY category")
-    category_sales = cursor.fetchall()
-    pie_chart = go.Figure(data=[go.Pie(labels=[row[0] for row in category_sales],
-                                     values=[row[1] for row in category_sales])])
     pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    return render_template('dashboard.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
-
-#  Move dummy data insertion to a separate function for clarity and to avoid accidental re-insertion.
-def insert_dummy_data():
-    with app.app_context():  # Ensure app context for database operations
-        db = get_db()
-        dummy_data = [
-            ('Product A', 'Electronics', 120),
-            ('Product B', 'Clothing', 85),
-            ('Product C', 'Electronics', 200),
-            ('Product D', 'Books', 50),
-            ('Product E', 'Clothing', 150),
-        ]
-        try:
-            db.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
-            db.commit()
-        except sqlite3.IntegrityError:  # Handle potential errors like duplicate entries if function is called repeatedly.
-            pass
-
-# Call this function to insert the data.
-insert_dummy_data()
 
 if __name__ == '__main__':
     app.run(debug=True)
