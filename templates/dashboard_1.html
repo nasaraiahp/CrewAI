@@ -6,7 +6,7 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Dashboard</h1>
+    <h1>Sales Data Visualization</h1>
 
     <h2>Bar Chart</h2>
     <div id="bar-chart"></div>
@@ -15,9 +15,11 @@
     <div id="pie-chart"></div>
 
     <script>
-        Plotly.newPlot('bar-chart', {{bar_chart | safe}});
-        Plotly.newPlot('pie-chart', {{pie_chart | safe}});
-    </script>
+        var bar_graphJSON = {{bar_graphJSON | safe}};
+        Plotly.newPlot('bar-chart', bar_graphJSON.data, bar_graphJSON.layout); // Use newPlot
 
+        var pie_graphJSON = {{pie_graphJSON | safe}};
+        Plotly.newPlot('pie-chart', pie_graphJSON.data, pie_graphJSON.layout); // Use newPlot
+    </script>
 </body>
 </html>
