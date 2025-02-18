@@ -7,87 +7,91 @@ import plotly.express as px
 import pandas as pd
 import sqlite3
 
-# Database setup (using a context manager for better resource management)
-DB_FILE = 'sales_data.db'  # Store the database filename in a variable for easier modification
+# Database setup (better practice to separate this into a dedicated file/function)
+DATABASE = 'sales_data.db'
 
-def create_and_populate_db(conn):
+def create_database():
+    conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sales (
-            product_name TEXT,
-            sales_amount REAL,
-            region TEXT
+            region TEXT,
+            product TEXT,
+            sales INTEGER
         )
     ''')
 
-    cursor.execute("SELECT COUNT(*) FROM sales")
-    if cursor.fetchone()[0] == 0:
-        dummy_data = [
-            ('Product A', 1200, 'North'),
-            ('Product B', 850, 'East'),
-            ('Product C', 1500, 'West'),
-            ('Product A', 900, 'South'),
-            ('Product B', 1100, 'North'),
-            ('Product C', 700, 'East'),
-            ('Product D', 1000, 'West')
-        ]
-        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
-        conn.commit()
+    sample_data = [
+        ('North', 'Product A', 1200),
+        ('North', 'Product B', 850),
+        ('East', 'Product A', 1500),
+        ('East', 'Product B', 1100),
+        ('South', 'Product A', 900),
+        ('South', 'Product B', 700),
+        ('West', 'Product A', 1000),
+        ('West', 'Product B', 950),
+    ]
+    cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", sample_data)
+    conn.commit()
+    conn.close()
 
 
-# Create Dash app
+# Create the database if it doesn't exist.  Check first to avoid re-creating if the .db file exists.
+import os
+if not os.path.exists(DATABASE):
+    create_database()
+
+
+def get_sales_data(selected_product):
+    """Retrieves sales data for a given product from the database."""
+    try:  # Incorporate basic error handling
+        with sqlite3.connect(DATABASE) as conn: # Use connection context manager
+            df = pd.read_sql_query("SELECT * FROM sales WHERE product = ?", conn, params=(selected_product,))
+        return df
+    except Exception as e:  # Handle potential exceptions
+        print(f"Database Error: {e}")
+        return pd.DataFrame() # Return empty DataFrame on error
+
+# Initialize the Dash app
 app = dash.Dash(__name__)
 
-# Prevent cross-site scripting (XSS) vulnerabilities by setting `serve_locally` to True if serving assets locally
-app.config.suppress_callback_exceptions = True
-
-
-# Layout of the dashboard
-app.layout = html.Div([
-    html.H1("Sales Dashboard"),
-
-    dcc.Dropdown(
-        id='product-dropdown',
-        # The options list is populated in the callback to handle dynamic data
-        value=None, # Start with no value to avoid errors on initial load. The callback will handle setting a default.
-        multi=False
-    ),
-
-    dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart')
+# Layout of the dashboard (no changes needed here)
+app.layout = html.Div(children=[
+    html.H1(children="Sales Dashboard"),
+    html.Div([
+        dcc.Dropdown(
+            id='product-dropdown',
+            options=[{'label': i, 'value': i} for i in ['Product A', 'Product B']],
+            value='Product A'
+        )
+    ]),
+    dcc.Graph(id='sales-bar-chart'),
+    dcc.Graph(id='sales-pie-chart')
 ])
 
-
-# Callback to update the charts and dropdown options based on data
+# Callbacks (now using the get_sales_data function)
 @app.callback(
-    [Output('bar-chart', 'figure'), 
-     Output('pie-chart', 'figure'),
-     Output('product-dropdown', 'options'),
-     Output('product-dropdown', 'value')],  # Set initial dropdown value here
-    [Input('product-dropdown', 'value')]
+    Output('sales-bar-chart', 'figure'),
+    Input('product-dropdown', 'value')
 )
-def update_charts(selected_product):
-    with sqlite3.connect(DB_FILE) as conn: # Use a context manager for automatic closing
-        create_and_populate_db(conn) # Ensure DB is created and populated inside the callback to avoid race conditions
+def update_bar_chart(selected_product):
+    df = get_sales_data(selected_product)
+    if df.empty:
+        return px.bar(title=f"Error Retrieving Data for {selected_product}") # Display error message in chart
+    fig = px.bar(df, x='region', y='sales', title=f'Sales of {selected_product} by Region')
+    return fig
 
-        available_products = pd.read_sql_query("SELECT DISTINCT product_name FROM sales", conn)['product_name'].unique()
-        dropdown_options = [{'label': product, 'value': product} for product in available_products]
-
-        if selected_product is None: #  Handle the initial callback where no product is selected yet
-            selected_product = available_products[0]  # Select the first product by default
-
-
-        df = pd.read_sql_query("SELECT * FROM sales WHERE product_name = ?", conn, params=(selected_product,))
-
-        # Bar chart
-        bar_fig = px.bar(df, x='region', y='sales_amount', title=f'Sales of {selected_product} by Region')
-
-        # Pie chart
-        pie_fig = px.pie(df, values='sales_amount', names='region', title=f'Sales Distribution of {selected_product} across Regions')
-
-    return bar_fig, pie_fig, dropdown_options, selected_product  # Return the dropdown options
-
-
+@app.callback(
+    Output('sales-pie-chart', 'figure'),
+    Input('product-dropdown', 'value')
+)
+def update_pie_chart(selected_product):
+    df = get_sales_data(selected_product)
+    if df.empty:
+        return px.pie(title=f"Error Retrieving Data for {selected_product}") # Display error message in chart
+    fig = px.pie(df, values='sales', names='region', title=f'Sales Distribution of {selected_product}')
+    return fig
 
 
 if __name__ == '__main__':
