@@ -1,11 +1,5 @@
 CREATE TABLE IF NOT EXISTS sales (
-    product TEXT PRIMARY KEY,
-    sales INTEGER
+    product TEXT,
+    category TEXT,
+    sales_quantity INTEGER
 );
-
-INSERT OR REPLACE INTO sales (product, sales) VALUES
-('Product A', 150),
-('Product B', 200),
-('Product C', 100),
-('Product D', 250),
-('Product E', 180);
