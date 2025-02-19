@@ -1,66 +1,71 @@
-# app.py (Flask application)
-from flask import Flask, render_template, g
+# app.py
+from flask import Flask, render_template
 import sqlite3
-import plotly
 import plotly.graph_objs as go
 import json
 import os
 
 app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
 
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-    return db
+# Database setup
+DATABASE = 'sales_data.db'  # Define database name as a constant
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+def get_db_connection():
+    """Establishes a connection to the database."""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # Access data by column name
+    return conn
 
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+def create_table():
+    """Creates the sales table if it doesn't exist."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sales (
+                product TEXT UNIQUE,  -- Ensure product names are unique
+                sales_quantity INTEGER
+            )
+        ''')
 
-# Ensure the instance folder exists and create the DB if it doesn't
-os.makedirs(app.instance_path, exist_ok=True)
-if not os.path.exists(DATABASE):
-    init_db()
-
-
-# Example data loading (better to do this separately, not in the app code)
-def load_sample_data():
-    with app.app_context():
-        db = get_db()
-        db.execute("INSERT OR REPLACE INTO sales VALUES ('Product A', 15000)")
-        db.execute("INSERT OR REPLACE INTO sales VALUES ('Product B', 22000)")
-        db.execute("INSERT OR REPLACE INTO sales VALUES ('Product C', 18000)")
-        db.execute("INSERT OR REPLACE INTO sales VALUES ('Product D', 25000)")
-        db.commit()
-
-# Uncomment to load sample data (usually you would load from csv, etc.)
-# load_sample_data()
-
+def insert_dummy_data():
+    """Inserts dummy data into the sales table."""
+    dummy_data = [
+        ('Product A', 120),
+        ('Product B', 80),
+        ('Product C', 150),
+        ('Product D', 50),
+        ('Product E', 100)
+    ]
+    try: # Handle potential IntegrityError if unique constraint is violated.
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany("INSERT INTO sales VALUES (?,?)", dummy_data)
+    except sqlite3.IntegrityError:
+        pass # Ignore error if data already exists.  This is cleaner than INSERT OR IGNORE
 
 
 @app.route('/')
 def index():
-    db = get_db()
-    sales_data = db.execute("SELECT * FROM sales").fetchall()
+    if not os.path.exists(DATABASE): # Check if the database exists
+        create_table()
+        insert_dummy_data()
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        sales_data = cursor.execute("SELECT * FROM sales").fetchall()
+
+    products = [row['product'] for row in sales_data] # Use column names
+    sales_quantities = [row['sales_quantity'] for row in sales_data]
 
     # Create charts
-    bar_chart = go.Figure(data=[go.Bar(x=[row[0] for row in sales_data], y=[row[1] for row in sales_data])])
-    pie_chart = go.Figure(data=[go.Pie(labels=[row[0] for row in sales_data], values=[row[1] for row in sales_data])])
+    bar_chart = go.Figure(data=[go.Bar(x=products, y=sales_quantities)])
+    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    # Use graph objects directly in the template or convert to JSON as needed
-    return render_template('index.html', bar_chart=bar_chart, pie_chart=pie_chart)
+    pie_chart = go.Figure(data=[go.Pie(labels=products, values=sales_quantities)])
+    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
 
 if __name__ == '__main__':
-    app.run(debug=True) #Never set debug to true in production, as it exposes a debugger interface to outside users.
+    app.run(debug=True) # ONLY set debug to true for development
