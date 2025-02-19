@@ -1,54 +1,49 @@
-# app.py (Flask application)
-from flask import Flask, render_template
+from flask import Flask, render_template, g
 import sqlite3
+import plotly
 import plotly.graph_objs as go
 import json
 import os
 
 app = Flask(__name__)
 
-# Database setup (best practice: store sensitive data like database paths securely)
-DATABASE = os.environ.get("DATABASE_URL") or "sales_data.db"  # Use environment variable or default
+# Database configuration
+DATABASE = os.path.join(app.instance_path, 'sales.db')  # Store DB in instance folder
 
-# Function to get a database connection (with better error handling and context management)
-def get_db_connection():
-    try:
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except sqlite3.Error as e:
-        print(f"Database error: {e}") # Log the error for debugging
-        return None # Return None to handle the error gracefully in the calling function
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row  # Access data by column names
+    return db
 
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 
 @app.route('/')
 def index():
-    conn = get_db_connection()
-    if conn is None:
-        return "Database connection error", 500 # Return an error response to the user
+    sales_data = query_db('SELECT * FROM sales')
 
-    try:
-        sales_data = conn.execute('SELECT product, sales FROM sales_data').fetchall()
-    except sqlite3.Error as e:
-        print(f"Database query error: {e}")
-        return "Error retrieving data", 500  # Return an error response
-    finally:
-        conn.close() # Ensure connection is always closed, even if error occurs
+    # Create charts using list comprehensions for efficiency
+    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data], y=[row['sales'] for row in sales_data])])
+    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data], values=[row['sales'] for row in sales_data])])
 
-
-    # Prepare data for Plotly charts
-    products = [row['product'] for row in sales_data]
-    sales = [row['sales'] for row in sales_data]
-
-    # Create charts (no changes needed here)
-    bar_chart = go.Figure(data=[go.Bar(x=products, y=sales)])
+    # Convert chart data to JSON
     bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-
-    pie_chart = go.Figure(data=[go.Pie(labels=products, values=sales)])
     pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
     return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
 if __name__ == '__main__':
+    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance folder exists
     app.run(debug=False) # Disable debug mode in production
