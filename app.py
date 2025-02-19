@@ -1,52 +1,56 @@
-# app.py (Flask application)
-import os
-from flask import Flask, render_template
-import mysql.connector
+from flask import Flask, render_template, g
+import sqlite3
 import plotly
 import plotly.graph_objs as go
 import json
+import os
 
 app = Flask(__name__)
+DATABASE = os.path.join(app.instance_path, 'sales.db')  # Store DB in instance folder
 
-# Database credentials (securely store these)
-DB_HOST = os.environ.get("DB_HOST", "localhost")  # Use environment variables
-DB_USER = os.environ.get("DB_USER", "root")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "nasa") # NEVER store passwords directly in code. Use environment variables or a secrets management service.
-DB_NAME = os.environ.get("DB_NAME", "sales_dashboard")
+# Database configuration
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('schema.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
+
+# Ensure the instance folder exists
+try:
+    os.makedirs(app.instance_path)
+except OSError:
+    pass
+
+# Initialize the database if it doesn't exist
+if not os.path.exists(DATABASE):
+    init_db()
 
 
+
+# Routes
 @app.route('/')
 def index():
-    try:
-        mydb = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME
-        )
-        mycursor = mydb.cursor()
+    db = get_db()
+    sales_data = db.execute('SELECT * FROM sales').fetchall()
 
-        # Use parameterized queries to prevent SQL injection
-        mycursor.execute("SELECT product, SUM(revenue) AS total_revenue FROM sales GROUP BY product")
-        product_revenue = mycursor.fetchall()
+    # ... (chart creation code remains the same) ...
 
-        mycursor.execute("SELECT sales_date, SUM(revenue) AS daily_revenue FROM sales GROUP BY sales_date")
-        daily_revenue = mycursor.fetchall()
-
-    except mysql.connector.Error as err:
-        # Handle database errors gracefully (log the error or display a user-friendly message)
-        return f"Database error: {err}"  # In a real application, don't expose raw error details to the user.
-    finally:
-        if mydb.is_connected():
-            mycursor.close()
-            mydb.close()
-
-
-
-    # ... (chart creation code remains the same)
-
-    return render_template('index.html', product_revenue_graphJSON=product_revenue_json, daily_revenue_graphJSON=daily_revenue_json)
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
 
 if __name__ == '__main__':
-    app.run(debug=True) # Disable debug mode in production!
+    app.run(debug=False) # Disable debug mode in production
