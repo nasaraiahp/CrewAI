@@ -1,21 +1,23 @@
-CREATE DATABASE IF NOT EXISTS sales_db;
-USE sales_db;
+-- sales_data.sql (MySQL table creation and data insertion)
+CREATE DATABASE IF NOT EXISTS sales_dashboard;
+USE sales_dashboard;
 
 CREATE TABLE IF NOT EXISTS sales (
     sale_id INT AUTO_INCREMENT PRIMARY KEY,
     product VARCHAR(255) NOT NULL,
-    sale_date DATE NOT NULL,
+    sales_date DATE NOT NULL,
     quantity INT NOT NULL,
     revenue DECIMAL(10, 2) NOT NULL,
-    INDEX product_idx (product)  -- Index for faster queries on product
+    KEY idx_sales_date (sales_date),  -- Index for faster date-based queries
+    KEY idx_product (product)      -- Index for faster product-based queries
 );
 
-INSERT INTO sales (product, sale_date, quantity, revenue) VALUES
+INSERT INTO sales (product, sales_date, quantity, revenue) VALUES
 ('Product A', '2024-01-05', 10, 250.00),
-('Product B', '2024-01-05', 5, 120.00),
+('Product B', '2024-01-05', 5, 150.00),
 ('Product A', '2024-01-12', 15, 375.00),
-('Product C', '2024-01-12', 8, 200.00),
-('Product B', '2024-01-19', 7, 175.00),
+('Product C', '2024-01-12', 20, 400.00),
+('Product B', '2024-01-19', 8, 240.00),
 ('Product A', '2024-01-19', 12, 300.00),
-('Product C', '2024-01-26', 10, 250.00),
-('Product B', '2024-01-26', 6, 150.00);
+('Product C', '2024-01-26', 25, 500.00),
+('Product B', '2024-01-26', 10, 300.00);
