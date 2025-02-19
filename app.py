@@ -6,9 +6,10 @@ import json
 import os
 
 app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales.db')  # Store DB in instance folder
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+app.config['SECRET_KEY'] = os.urandom(24) # Add Secret Key for session security if needed later
 
-# Database configuration
+
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
@@ -22,35 +23,30 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-# Ensure the instance folder exists
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
-
-# Initialize the database if it doesn't exist
-if not os.path.exists(DATABASE):
-    init_db()
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 
-
-# Routes
 @app.route('/')
 def index():
-    db = get_db()
-    sales_data = db.execute('SELECT * FROM sales').fetchall()
+    sales_data = query_db('SELECT product, sales FROM sales')
 
-    # ... (chart creation code remains the same) ...
+    # Plotly Bar Chart
+    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data],
+                                        y=[row['sales'] for row in sales_data])])
+    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+    # Plotly Pie Chart
+    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data],
+                                        values=[row['sales'] for row in sales_data])])
+    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+
+    return render_template('index.html', bar_graph_json=bar_chart_json, pie_graph_json=pie_chart_json)
 
 
 if __name__ == '__main__':
+    os.makedirs(app.instance_path, exist_ok=True) # Ensure instance path exists
     app.run(debug=False) # Disable debug mode in production
