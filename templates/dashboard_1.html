@@ -1,4 +1,4 @@
-<!-- templates/index.html -->
+<!-- templates/index.html (No significant security concerns in template) -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,14 +6,13 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Data Visualization</h1>
+    <h1>Sales Dashboard</h1>
 
-    <h2>Sales by Product</h2>
+    <h2>Sales by Product (Bar Chart)</h2>
     <div id="bar-chart"></div>
 
-    <h2>Sales by Region</h2>
+    <h2>Sales Distribution (Pie Chart)</h2>
     <div id="pie-chart"></div>
-
 
     <script>
         var bar_chart_data = {{ bar_chart | safe }};
@@ -23,6 +22,5 @@
         Plotly.newPlot('pie-chart', pie_chart_data.data, pie_chart_data.layout);
 
     </script>
-
 </body>
 </html>
