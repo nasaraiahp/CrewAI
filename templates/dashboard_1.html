@@ -1,3 +1,4 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -5,23 +6,14 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Sales Dashboard</h1>
+    <h1>Sales Data Visualization</h1>
 
-    <h2>Sales by Product</h2>
     <div id="bar-chart"></div>
-
-    <h2>Sales by Category</h2>
     <div id="pie-chart"></div>
 
-
     <script>
-        var bar_chart_data = JSON.parse('{{ bar_chart | safe }}'); // Parse JSON string
-        Plotly.newPlot('bar-chart', bar_chart_data);
-
-
-        var pie_chart_data = JSON.parse('{{ pie_chart | safe }}'); // Parse JSON string
-        Plotly.newPlot('pie-chart', pie_chart_data);
-
+        Plotly.newPlot('bar-chart', {{bar_chart.to_json() | safe}});  
+        Plotly.newPlot('pie-chart', {{pie_chart.to_json() | safe}});
     </script>
 </body>
 </html>
