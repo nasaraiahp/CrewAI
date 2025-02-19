@@ -8,12 +8,21 @@
 <body>
     <h1>Sales Data Visualization</h1>
 
+    <h2>Sales by Product</h2>
     <div id="bar-chart"></div>
+
+    <h2>Sales by Region</h2>
     <div id="pie-chart"></div>
 
+
     <script>
-        Plotly.newPlot('bar-chart', {{bar_chart.to_json() | safe}});  
-        Plotly.newPlot('pie-chart', {{pie_chart.to_json() | safe}});
+        var bar_chart_data = {{ bar_chart | safe }};
+        Plotly.newPlot('bar-chart', bar_chart_data.data, bar_chart_data.layout);
+
+        var pie_chart_data = {{ pie_chart | safe }};
+        Plotly.newPlot('pie-chart', pie_chart_data.data, pie_chart_data.layout);
+
     </script>
+
 </body>
 </html>
