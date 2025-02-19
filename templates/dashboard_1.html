@@ -8,14 +8,16 @@
 <body>
     <h1>Sales Dashboard</h1>
 
-    <div id="bar-chart"></div>
-    <script>
-        Plotly.newPlot('bar-chart', JSON.parse('{{ bar_chart | safe }}'));
-    </script>
+    <div id="product-revenue-chart"></div>
+    <div id="daily-revenue-chart"></div>
 
-    <div id="pie-chart"></div>
-    <script>
-        Plotly.newPlot('pie-chart', JSON.parse('{{ pie_chart | safe }}'));
+    <script type="text/javascript">
+        var productRevenueGraph = {{ product_revenue_graphJSON | safe }};
+        Plotly.newPlot('product-revenue-chart', productRevenueGraph.data, productRevenueGraph.layout);  // Use newPlot
+
+        var dailyRevenueGraph = {{daily_revenue_graphJSON | safe}};
+        Plotly.newPlot('daily-revenue-chart', dailyRevenueGraph.data, dailyRevenueGraph.layout);  // Use newPlot
+
     </script>
 </body>
 </html>
