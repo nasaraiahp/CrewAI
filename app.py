@@ -1,73 +1,47 @@
-from flask import Flask, render_template, g
-import sqlite3
+from flask import Flask, render_template
+import mysql.connector
+import plotly
 import plotly.graph_objs as go
-import plotly.utils
 import json
 import os
 
 app = Flask(__name__)
-DATABASE = 'sales_data.db'  # Define database path as a constant
 
-# Database setup and connection management
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row  # Access data by column name
-    return db
-
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
-
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
-
-def insert_sample_data():
-    with app.app_context():
-        db = get_db()
-        sample_data = [
-            ('Product A', 'Electronics', 120),
-            ('Product B', 'Clothing', 85),
-            ('Product C', 'Electronics', 200),
-            ('Product D', 'Books', 50),
-            ('Product E', 'Clothing', 150),
-            ('Product F', 'Books', 70),
-            ('Product G', 'Electronics', 100),
-        ]
-        db.executemany("INSERT OR IGNORE INTO sales VALUES (?, ?, ?)", sample_data)
-        db.commit()
+# Get database credentials from environment variables (BEST PRACTICE)
+DB_HOST = os.environ.get("DB_HOST", "localhost")  # Default to localhost if not set
+DB_USER = os.environ.get("DB_USER", "root")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")  # No default password
+DB_NAME = os.environ.get("DB_NAME", "sales_db")
 
 
-# Check if the database file exists and initialize if not
-if not os.path.exists(DATABASE):
-    init_db()
-    insert_sample_data()
+@app.route("/")
+def index():
+    try:
+        # Create connection inside the function (better for handling potential errors)
+        mydb = mysql.connector.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME
+        )
+        mycursor = mydb.cursor()
+        mycursor.execute("SELECT * FROM sales_data")
+        sales_data = mycursor.fetchall()
 
+        products = [row[0] for row in sales_data]
+        sales = [row[1] for row in sales_data]
 
+        # ... (chart creation code remains the same)
 
-@app.route('/')
-def dashboard():
-    db = get_db()
-    bar_data = db.execute("SELECT product, sales_quantity FROM sales").fetchall()
-    pie_data = db.execute("SELECT category, SUM(sales_quantity) FROM sales GROUP BY category").fetchall()
+    except mysql.connector.Error as err:
+        print(f"Error connecting to database: {err}")  # Log the error
+        return "Database error", 500  # Return an error response to the user
+    finally:
+        if 'mydb' in locals() and mydb.is_connected():  # Always close the connection
+            mycursor.close()
+            mydb.close()
 
-    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in bar_data], y=[row['sales_quantity'] for row in bar_data])])
-    bar_chart.update_layout(title='Product Sales')
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
-    pie_chart = go.Figure(data=[go.Pie(labels=[row['category'] for row in pie_data], values=[row['SUM(sales_quantity)'] for row in pie_data])]) # Access using column names
-    pie_chart.update_layout(title='Sales by Category')
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
-
-    return render_template('dashboard.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=False) # Disable debug mode in production
