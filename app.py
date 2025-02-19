@@ -1,20 +1,21 @@
-from flask import Flask, render_template, g
+# app.py (Flask application)
 import sqlite3
+import json
+
 import plotly
 import plotly.graph_objs as go
-import json
-import os
+from flask import Flask, render_template, g
 
 app = Flask(__name__)
 
 # Database configuration
-DATABASE = os.path.join(app.instance_path, 'sales.db')  # Store DB in instance folder
+DATABASE = 'sales_data.db'
 
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row  # Access data by column names
+        db.row_factory = sqlite3.Row
     return db
 
 @app.teardown_appcontext
@@ -30,20 +31,35 @@ def query_db(query, args=(), one=False):
     return (rv[0] if rv else None) if one else rv
 
 
+# Routes
 @app.route('/')
 def index():
-    sales_data = query_db('SELECT * FROM sales')
+    sales_by_product = query_db('SELECT product, SUM(sales) AS total_sales FROM sales GROUP BY product')
+    sales_by_region = query_db('SELECT region, SUM(sales) AS total_sales FROM sales GROUP BY region')
 
-    # Create charts using list comprehensions for efficiency
-    bar_chart = go.Figure(data=[go.Bar(x=[row['product'] for row in sales_data], y=[row['sales'] for row in sales_data])])
-    pie_chart = go.Figure(data=[go.Pie(labels=[row['product'] for row in sales_data], values=[row['sales'] for row in sales_data])])
+    # Plotly charts
+    bar_chart = create_bar_chart(sales_by_product, 'Sales by Product')
+    pie_chart = create_pie_chart(sales_by_region, 'Sales by Region')
 
-    # Convert chart data to JSON
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    return render_template('index.html', 
+                           bar_chart=bar_chart,
+                           pie_chart=pie_chart)
 
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+def create_bar_chart(data, title):
+    fig = go.Figure(data=[go.Bar(
+        x=[row['product'] for row in data],
+        y=[row['total_sales'] for row in data]
+    )], layout=go.Layout(title=title))
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+def create_pie_chart(data, title):
+     fig = go.Figure(data=[go.Pie(
+        labels=[row['region'] for row in data],
+        values=[row['total_sales'] for row in data]
+    )], layout=go.Layout(title=title))
+     return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
 
 if __name__ == '__main__':
-    os.makedirs(app.instance_path, exist_ok=True)  # Ensure instance folder exists
-    app.run(debug=False) # Disable debug mode in production
+    app.run(debug=True)
