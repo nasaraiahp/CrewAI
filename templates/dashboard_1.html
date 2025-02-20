@@ -1,3 +1,4 @@
+<!-- templates/dashboard.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -11,11 +12,12 @@
     <div id="pie-chart"></div>
 
     <script>
-        var barChartData = JSON.parse('{{ bar_chart | safe }}'); // Parse JSON string
-        Plotly.newPlot('bar-chart', barChartData);
+        var bar_chart_data = {{ bar_chart | safe }};
+        Plotly.newPlot('bar-chart', bar_chart_data);
 
-        var pieChartData = JSON.parse('{{ pie_chart | safe }}'); // Parse JSON string
-        Plotly.newPlot('pie-chart', pieChartData);
+
+        var pie_chart_data = {{ pie_chart | safe }};
+        Plotly.newPlot('pie-chart', pie_chart_data);
 
     </script>
 </body>
