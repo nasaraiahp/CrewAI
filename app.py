@@ -1,80 +1,89 @@
-# app.py
-import os
-from flask import Flask, render_template, g
+import dash
+from dash import dcc
+from dash import html
+from dash.dependencies import Input, Output
+import plotly.express as px
 import sqlite3
-import plotly.graph_objs as go
 import pandas as pd
-import json
 
-app = Flask(__name__)
-DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+# --- Database Interactions ---
+# Use a context manager for database connections to ensure proper closing
+# and handle potential exceptions.
 
-# Database setup
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
+def get_db_connection():
+    return sqlite3.connect('sales_data.db')
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+def create_sales_table(conn):
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            product TEXT,
+            category TEXT,
+            sales_amount REAL
+        )
+    ''')
 
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+def insert_dummy_data(conn):
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:
+        dummy_data = [
+            ('Product A', 'Category 1', 1200),
+            ('Product B', 'Category 2', 850),
+            ('Product C', 'Category 1', 1500),
+            ('Product D', 'Category 3', 1000),
+            ('Product E', 'Category 2', 900),
+        ]
+        conn.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
+        conn.commit()
 
-# Initialize database if it doesn't exist
-os.makedirs(app.instance_path, exist_ok=True)
-if not os.path.exists(DATABASE):
-    init_db()
-
-
-# Populate database with dummy data (run once initially)
-@app.route('/init_data')
-def init_data():
-    with app.app_context():
-        db = get_db()
-        cur = db.cursor()
-        try:
-            sales_data = [
-                ('Product A', 100, 5000),
-                ('Product B', 150, 7500),
-                ('Product C', 80, 4000),
-                ('Product D', 120, 6000),
-                ('Product E', 200, 10000)
-            ]
-            cur.executemany("INSERT INTO sales (product, sales_quantity, sales_amount) VALUES (?, ?, ?)", sales_data)
-            db.commit()
-            return "Data initialized!"
-        except Exception as e:  # Handle exceptions properly
-            db.rollback() # Rollback on error to avoid partial updates
-            return f"Error: {e}"
+# Initialize database on app startup
+with get_db_connection() as conn:
+    create_sales_table(conn)
+    insert_dummy_data(conn)
 
 
-@app.route('/')
-def index():
-    with app.app_context():
-        db = get_db()
-        df = pd.read_sql_query("SELECT * FROM sales", db)
+# --- Dash App ---
+app = dash.Dash(__name__)
 
+app.layout = html.Div(children=[
+    html.H1(children="Sales Dashboard"),
 
-    # Bar chart
-    bar_chart = go.Figure(data=[go.Bar(x=df['product'], y=df['sales_amount'])])
-    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    dcc.Graph(id='sales-bar-chart'),
 
-    # Pie chart
-    pie_chart = go.Figure(data=[go.Pie(labels=df['product'], values=df['sales_quantity'])])
-    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
+    dcc.Dropdown(
+        id='category-dropdown',
+        options=[{'label': 'All', 'value': 'All'}], # Initial options, updated in callback
+        value='All',
+        clearable=False
+    ),
 
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
+    dcc.Graph(id='sales-pie-chart'),
+
+])
+
+@app.callback(
+    [Output('sales-bar-chart', 'figure'),
+     Output('sales-pie-chart', 'figure'),
+     Output('category-dropdown', 'options')],  # Update dropdown options dynamically
+    [Input('category-dropdown', 'value')]
+)
+def update_charts(selected_category):
+    with get_db_connection() as conn:
+        if selected_category == 'All':
+            df = pd.read_sql_query("SELECT * FROM sales", conn)
+        else:
+            # Use parameterized query to prevent SQL injection
+            df = pd.read_sql_query("SELECT * FROM sales WHERE category = ?", conn, params=(selected_category,))
+
+        # Dynamically update dropdown options.  Only make this database call once per page load.
+        all_categories = pd.read_sql_query("SELECT DISTINCT category FROM sales", conn)
+        dropdown_options = [{'label': 'All', 'value': 'All'}] + [{'label': i, 'value': i} for i in all_categories['category']]
+
+    bar_fig = px.bar(df, x='product', y='sales_amount', color='category', title='Sales by Product')
+    pie_fig = px.pie(df, values='sales_amount', names='product', title='Sales Distribution')
+
+    return bar_fig, pie_fig, dropdown_options  # Return the updated dropdown options
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run_server(debug=True)
