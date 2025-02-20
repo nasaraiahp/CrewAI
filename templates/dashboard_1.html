@@ -1,4 +1,4 @@
-<!-- templates/index.html -->
+<!-- templates/index.html (No changes) -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -8,18 +8,18 @@
 <body>
     <h1>Sales Dashboard</h1>
 
-    <h2>Sales Amount by Product</h2>
+    <h2>Sales Quantity by Product</h2>
     <div id="bar-chart"></div>
 
-    <h2>Sales Quantity by Product</h2>
+    <h2>Sales Revenue by Product</h2>
     <div id="pie-chart"></div>
 
     <script>
         var bar_chart_data = {{ bar_chart | safe }};
-        Plotly.newPlot('bar-chart', bar_chart_data.data, bar_chart_data.layout);
+        Plotly.newPlot('bar-chart', bar_chart_data);
 
         var pie_chart_data = {{ pie_chart | safe }};
-        Plotly.newPlot('pie-chart', pie_chart_data.data, pie_chart_data.layout);
+        Plotly.newPlot('pie-chart', pie_chart_data);
 
     </script>
 </body>
