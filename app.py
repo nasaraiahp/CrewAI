@@ -1,46 +1,26 @@
-# app.py
 import dash
 from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
 import sqlite3
-from flask import Flask
-import os
 import base64
 import io
+import os
 
-server = Flask(__name__)
-app = dash.Dash(__name__, server=server, suppress_callback_exceptions=True) # Suppress callback exceptions for better error handling
+# Initialize the Dash app
+app = dash.Dash(__name__)
+server = app.server
 
-# Database setup (consider environment variables for sensitive data)
-DATABASE_URL = os.environ.get("DATABASE_URL", "customer_data.db")  # Use environment variable if available, fallback to local file
+# Database setup
+db_name = "customer_data.db"
 
-def create_table():
-    conn = sqlite3.connect(DATABASE_URL)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS customers (
-            Index INTEGER PRIMARY KEY AUTOINCREMENT,
-            CustomerID TEXT UNIQUE,  -- Add UNIQUE constraint to CustomerID
-            FirstName TEXT,
-            LastName TEXT,
-            Company TEXT,
-            City TEXT,
-            Country TEXT,
-            Phone1 TEXT,
-            Phone2 TEXT,
-            Email TEXT,
-            SubscriptionDate TEXT,
-            Website TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-create_table()
+# Better practice to connect to the database only when needed
+def get_db_connection():
+    return sqlite3.connect(db_name, check_same_thread=False)
 
 
+# Layout of the Dash app
 app.layout = html.Div([
     html.H1("Customer Data Dashboard"),
     dcc.Upload(
@@ -56,15 +36,21 @@ app.layout = html.Div([
             'textAlign': 'center',
             'margin': '10px'
         },
+        # Allow multiple files to be uploaded
         multiple=False
     ),
     html.Div(id='output-data-upload'),
     dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart')
+    dcc.Graph(id='pie-chart'),
+    dash_table.DataTable(id='data-table', page_size=10),
 ])
 
-
-@app.callback(Output('output-data-upload', 'children'),
+# Callback to handle CSV upload and data processing
+@app.callback([Output('output-data-upload', 'children'),
+               Output('bar-chart', 'figure'),
+               Output('pie-chart', 'figure'),
+               Output('data-table', 'data'),
+               Output('data-table', 'columns')],
               Input('upload-data', 'contents'),
               State('upload-data', 'filename'))
 def update_output(contents, filename):
@@ -74,38 +60,31 @@ def update_output(contents, filename):
         try:
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
 
-            # Data validation - Example: Check for required columns
-            required_columns = ['CustomerID', 'FirstName', 'LastName', 'Country'] # Example
-            if not all(col in df.columns for col in required_columns):
-                return html.Div(['Error: Missing required columns.'])
+            # Database operations within a context manager
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                # Parameterized query to prevent SQL injection
+                cursor.execute('''CREATE TABLE IF NOT EXISTS customers 
+                               (Index1 INTEGER PRIMARY KEY AUTOINCREMENT, "Customer ID" TEXT, "First Name" TEXT, "Last Name" TEXT, 
+                               Company TEXT, City TEXT, Country TEXT, "Phone 1" TEXT, "Phone 2" TEXT, Email TEXT, 
+                               "Subscription Date" TEXT, Website TEXT)''')
+                                # Let SQLite handle index automatically with AUTOINCREMENT                               
+                df.to_sql('customers', conn, if_exists='replace', index=False)
+                # commit happens automatically upon exiting 'with' block
 
 
-            conn = sqlite3.connect(DATABASE_URL)
-            df.to_sql('customers', conn, if_exists='replace', index=False) # Consider 'append' if not replacing
-            conn.close()
+            # Data Visualization
+            bar_fig = px.bar(df, x='Country', y='Index1', title='Customer Distribution by Country')
+            pie_fig = px.pie(df, values='Index1', names='Country', title='Customer Share by Country')
 
-            return html.Div([
-                html.H5(f'Successfully uploaded {filename}') # More descriptive message
-            ])
+            table_columns = [{'name': i, 'id': i} for i in df.columns]
+            table_data = df.to_dict('records')
 
+            return html.Div([html.H5(f"Uploaded file: {filename}")]), bar_fig, pie_fig, table_data, table_columns
         except Exception as e:
-            print(e) # Log the error for debugging
-            return html.Div([html.H5(f'There was an error processing this file: {e}')]) # Show error to user
+            return html.Div([html.H5(f"There was an error processing this file. {e}")]), None, None, None, None # More informative error message
 
-
-@app.callback(
-    [Output('bar-chart', 'figure'), Output('pie-chart', 'figure')],
-    Input('output-data-upload', 'children')  # Triggered after upload
-)
-def update_graphs(_):  # The input isn't directly used but the callback needs a trigger
-    conn = sqlite3.connect(DATABASE_URL)
-    df = pd.read_sql_query("SELECT * from customers", conn)  # Parameterize query if taking user input later
-    conn.close()
-
-    bar_fig = px.bar(df, x='Country', y='Index', title='Customer Distribution by Country')
-    pie_fig = px.pie(df, names='Country', title='Customer Proportion by Country')
-
-    return bar_fig, pie_fig
+    return html.Div([html.H5("Please upload a CSV file.")]), None, None, None, None
 
 
 
