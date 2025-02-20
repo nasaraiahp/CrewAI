@@ -5,45 +5,58 @@ from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
 import sqlite3
+from flask import Flask
+import os
 import base64
 import io
-import os
 
-app = dash.Dash(__name__)
+server = Flask(__name__)
+app = dash.Dash(__name__, server=server, suppress_callback_exceptions=True) # Suppress callback exceptions for better error handling
 
-# Database setup (better to do this outside the callback)
-db_path = "customer_data.db"  # Use a consistent path
-if not os.path.exists(db_path):  # Create the database if it doesn't exist
-    conn = sqlite3.connect(db_path)
+# Database setup (consider environment variables for sensitive data)
+DATABASE_URL = os.environ.get("DATABASE_URL", "customer_data.db")  # Use environment variable if available, fallback to local file
+
+def create_table():
+    conn = sqlite3.connect(DATABASE_URL)
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE customers (
-            "Index" INTEGER PRIMARY KEY AUTOINCREMENT,  -- Make Index a primary key
-            "Customer ID" INTEGER,
-            "First Name" TEXT,
-            "Last Name" TEXT,
-            "Company" TEXT,
-            "City" TEXT,
-            "Country" TEXT,
-            "Phone 1" TEXT,
-            "Phone 2" TEXT,
-            "Email" TEXT,
-            "Subscription Date" TEXT,
-            "Website" TEXT
+        CREATE TABLE IF NOT EXISTS customers (
+            Index INTEGER PRIMARY KEY AUTOINCREMENT,
+            CustomerID TEXT UNIQUE,  -- Add UNIQUE constraint to CustomerID
+            FirstName TEXT,
+            LastName TEXT,
+            Company TEXT,
+            City TEXT,
+            Country TEXT,
+            Phone1 TEXT,
+            Phone2 TEXT,
+            Email TEXT,
+            SubscriptionDate TEXT,
+            Website TEXT
         )
-    ''')  # Use parameterized queries or a safer method to create the table schema
+    ''')
     conn.commit()
     conn.close()
 
+create_table()
 
-# HTML layout
+
 app.layout = html.Div([
     html.H1("Customer Data Dashboard"),
     dcc.Upload(
         id='upload-data',
-        children=html.Button('Upload CSV'),
-        multiple=False,
-        accept=".csv"  # Restrict to CSV files
+        children=html.Div(['Drag and Drop or ', html.A('Select Files')]),
+        style={
+            'width': '100%',
+            'height': '60px',
+            'lineHeight': '60px',
+            'borderWidth': '1px',
+            'borderStyle': 'dashed',
+            'borderRadius': '5px',
+            'textAlign': 'center',
+            'margin': '10px'
+        },
+        multiple=False
     ),
     html.Div(id='output-data-upload'),
     dcc.Graph(id='bar-chart'),
@@ -51,46 +64,49 @@ app.layout = html.Div([
 ])
 
 
-# Callback to handle data upload and display
-@app.callback(
-    Output('output-data-upload', 'children'),
-    Output('bar-chart', 'figure'),
-    Output('pie-chart', 'figure'),
-    Input('upload-data', 'contents'),
-    State('upload-data', 'filename')
-)
+@app.callback(Output('output-data-upload', 'children'),
+              Input('upload-data', 'contents'),
+              State('upload-data', 'filename'))
 def update_output(contents, filename):
     if contents is not None:
-        try:  # Add try-except block for better error handling
-            content_type, content_string = contents.split(',')
-            decoded = base64.b64decode(content_string)
+        content_type, content_string = contents.split(',')
+        decoded = base64.b64decode(content_string)
+        try:
             df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
 
-            # Store data in SQLite database (using context manager)
-            conn = sqlite3.connect(db_path)
-            df.to_sql('customers', conn, if_exists='replace', index=False) # Consider 'append' instead of 'replace'
+            # Data validation - Example: Check for required columns
+            required_columns = ['CustomerID', 'FirstName', 'LastName', 'Country'] # Example
+            if not all(col in df.columns for col in required_columns):
+                return html.Div(['Error: Missing required columns.'])
+
+
+            conn = sqlite3.connect(DATABASE_URL)
+            df.to_sql('customers', conn, if_exists='replace', index=False) # Consider 'append' if not replacing
             conn.close()
 
-            # Create bar chart
-            bar_fig = px.bar(df, x='Country', y='Customer ID', title='Customers per Country')
+            return html.Div([
+                html.H5(f'Successfully uploaded {filename}') # More descriptive message
+            ])
 
-            # Create pie chart
-            city_counts = df['City'].value_counts()
-            pie_fig = px.pie(city_counts, values=city_counts.values, names=city_counts.index,
-                             title='Customer Distribution by City')
-
-            # Display the uploaded data as a table
-            table = dash_table.DataTable(
-                data=df.to_dict('records'),
-                columns=[{'name': i, 'id': i} for i in df.columns],
-                page_size=10  # Add pagination for large datasets
-            )
-
-            return table, bar_fig, pie_fig
         except Exception as e:
-            return html.Div(f"Error processing file: {e}"), None, None # Display error messages
+            print(e) # Log the error for debugging
+            return html.Div([html.H5(f'There was an error processing this file: {e}')]) # Show error to user
 
-    return None, None, None  # Return None for figures if no data is uploaded
+
+@app.callback(
+    [Output('bar-chart', 'figure'), Output('pie-chart', 'figure')],
+    Input('output-data-upload', 'children')  # Triggered after upload
+)
+def update_graphs(_):  # The input isn't directly used but the callback needs a trigger
+    conn = sqlite3.connect(DATABASE_URL)
+    df = pd.read_sql_query("SELECT * from customers", conn)  # Parameterize query if taking user input later
+    conn.close()
+
+    bar_fig = px.bar(df, x='Country', y='Index', title='Customer Distribution by Country')
+    pie_fig = px.pie(df, names='Country', title='Customer Proportion by Country')
+
+    return bar_fig, pie_fig
+
 
 
 
