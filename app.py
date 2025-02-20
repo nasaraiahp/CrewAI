@@ -1,92 +1,109 @@
-# app.py
 import pandas as pd
 import sqlite3
-from dash import Dash, html, dcc
-from dash.dependencies import Input, Output
+import dash
+from dash import dcc, html, Input, Output
 import plotly.express as px
+from dash.dependencies import Input, Output
 import os
 
-# Database configuration
-DATABASE_PATH = os.path.join(os.getcwd(), 'sales_data.db')  # Use os.path.join for platform compatibility
+# --- Database Operations ---
+# Use environment variables for sensitive data like database paths
+db_path = os.environ.get("DB_PATH", "customer_data.db")  # Default if env var not set
+csv_file = os.environ.get("CSV_FILE_PATH", "customer_data.csv")
 
-# SQL queries parameterized for security
-CREATE_TABLE_QUERY = """
-CREATE TABLE IF NOT EXISTS sales (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    CustomerId INTEGER,
-    FirstName TEXT,
-    LastName TEXT,
-    Company TEXT,
-    City TEXT,
-    Country TEXT,
-    Phone1 TEXT,
-    Phone2 TEXT,
-    Email TEXT,
-    SubscriptionDate TEXT,
-    Website TEXT
-);
-"""
-
-INSERT_DATA_QUERY = "INSERT INTO sales VALUES (?,?,?,?,?,?,?,?,?,?,?,?);"
-
-
-def load_data(conn, csv_path):
+def create_and_populate_table(db_path, csv_file):
     try:
-        df = pd.read_csv(csv_path)
-        df['SubscriptionDate'] = pd.to_datetime(df['SubscriptionDate'])  # Convert to datetime on load
-        df.to_sql('sales', conn, if_exists='replace', index=False)
-    except FileNotFoundError:
-        print(f"CSV file not found at: {csv_path}")  # More specific error message.
-        exit(1)  # Use a non-zero exit code to indicate an error
-    except Exception as e:  # Catch more general exceptions
-        print(f"An error occurred loading data: {e}")
-        exit(1)
+        conn = sqlite3.connect(db_path)  # No need for isolation_level in this context
+        cursor = conn.cursor()
 
-# Establish database connection and load data
-try:
-    conn = sqlite3.connect(DATABASE_PATH)  # Use parameterized path
+        # Parameterized query to prevent SQL injection (though not strictly needed for table creation)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY,
+                CustomerId INTEGER,
+                FirstName TEXT,
+                LastName TEXT,
+                Company TEXT,
+                City TEXT,
+                Country TEXT,
+                Phone1 TEXT,
+                Phone2 TEXT,
+                Email TEXT,
+                SubscriptionDate TEXT,  # Store as TEXT to avoid potential date parsing errors
+                Website TEXT
+            )
+        ''')
 
-    # Use parameterized query to create the table
-    conn.execute(CREATE_TABLE_QUERY)
+        # Efficiently load CSV using pandas' optimized to_sql
+        df = pd.read_csv(csv_file)
+        df.to_sql('customers', conn, if_exists='replace', index=False)
+        conn.commit()
+        print("Table created and populated successfully!")
 
-    # Load data only if a CSV path is provided
-    csv_file_path = os.getenv('CSV_FILE_PATH')  # Use environment variables to provide the path
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
-    if csv_file_path:
-        load_data(conn, csv_file_path)
-    else:
-        print("Warning: No CSV file path provided. Using existing database or starting with an empty one.")
+    finally:
+        if 'conn' in locals():  # Ensure connection is closed even if an error occurs.
+            conn.close()
 
-
-
-except Exception as e:
-    print(f"Database error: {e}")
-    exit(1)
-
-
-# Create Dash app
-app = Dash(__name__)
-
-# App layout (no changes here for now)
-# ... (same layout as before)
-
-
-# Callback functions (mostly the same logic)
-# ... (callbacks with minor changes as detailed below)
+# Create table outside the Dash app to avoid recreating on every refresh in debug mode
+create_and_populate_table(db_path, csv_file)
 
 
 
-# ... (Rest of the callbacks are the same, except update_subscription_trend, see below)
+# --- Dash App ---
+app = dash.Dash(__name__)
 
-def update_subscription_trend():
-    # Use a parameterized query to fetch data
-    query = "SELECT SubscriptionDate, COUNT(CustomerId) AS CustomerCount FROM sales GROUP BY SubscriptionDate"
-    subscriptions_over_time = pd.read_sql_query(query, conn, parse_dates=['SubscriptionDate'])
+# Separate layout definition for better readability
+app.layout = html.Div([
+    html.H1("Customer Data Dashboard"),
+    dcc.Dropdown(
+        id='chart-type',
+        options=[
+            {'label': 'Customers per Country', 'value': 'country'},
+            {'label': 'Customers per City', 'value': 'city'},
+            {'label': 'Subscription Date Distribution', 'value': 'subscription_date'},
+            {'label': 'New Subscriptions Over Time', 'value': 'subscriptions_over_time'}
+        ],
+        value='country',
+        clearable=False
+    ),
+    dcc.Graph(id='sales-chart')
+])
 
-    subscriptions_over_time = subscriptions_over_time.groupby(subscriptions_over_time['SubscriptionDate'].dt.to_period('M'))['CustomerCount'].sum().reset_index()
-    subscriptions_over_time['SubscriptionDate'] = subscriptions_over_time['SubscriptionDate'].dt.to_timestamp()
-    fig = px.line(subscriptions_over_time, x='SubscriptionDate', y='CustomerCount', title='Trend of New Subscriptions Over Time')
-    return fig
+
+@app.callback(
+    Output('sales-chart', 'figure'),
+    Input('chart-type', 'value')
+)
+def update_chart(chart_type):
+    try:  # Add try-except for database connection in the callback
+        conn = sqlite3.connect(db_path)
+        # Use parameterized query even though chart_type is controlled by the dropdown
+        df = pd.read_sql_query("SELECT * FROM customers", conn)  # Capitalize SQL keywords for clarity
+        conn.close()
+
+
+        fig = {}  # Initialize fig
+        if chart_type == 'country':
+            fig = px.histogram(df, x='Country', title="Number of Customers per Country")
+        elif chart_type == 'city':
+            fig = px.pie(df, names='City', title='Proportion of Customers by City')
+        elif chart_type == 'subscription_date':
+            df['SubscriptionDate'] = pd.to_datetime(df['SubscriptionDate'], errors='coerce')  # Handle parsing errors
+            fig = px.histogram(df, x='SubscriptionDate', title='Distribution of Subscription Dates')
+        elif chart_type == 'subscriptions_over_time':
+            df['SubscriptionDate'] = pd.to_datetime(df['SubscriptionDate'], errors='coerce')
+            subscriptions_over_time = df.groupby(pd.Grouper(key='SubscriptionDate', freq='M'))['CustomerId'].count().reset_index()
+            fig = px.line(subscriptions_over_time, x='SubscriptionDate', y='CustomerId', title='New Subscriptions Over Time')
+
+        return fig  # Return the figure after the if-elif block
+
+    except Exception as e:  # Add error handling
+        print(f"An error occurred in update_chart: {e}")
+        return dash.no_update # or return an empty figure if no_update is causing issues.
+
 
 if __name__ == '__main__':
-    app.run_server(debug=False)  # Disable debug mode in production
+    app.run_server(debug=True)  # Debug mode recommended for development, disable in production
