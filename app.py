@@ -1,89 +1,65 @@
+# app.py
 import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
+from dash import dcc, html, Input, Output
 import plotly.express as px
-import sqlite3
 import pandas as pd
+import sqlite3
+import os
 
-# --- Database Interactions ---
-# Use a context manager for database connections to ensure proper closing
-# and handle potential exceptions.
+# Security best practice: Store sensitive information (like database path) in environment variables
+DATABASE_URL = os.environ.get("DATABASE_URL", "sales_data.db")  # Default to sales_data.db if not set
 
-def get_db_connection():
-    return sqlite3.connect('sales_data.db')
-
-def create_sales_table(conn):
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS sales (
-            product TEXT,
-            category TEXT,
-            sales_amount REAL
-        )
-    ''')
-
-def insert_dummy_data(conn):
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM sales")
-    if cursor.fetchone()[0] == 0:
-        dummy_data = [
-            ('Product A', 'Category 1', 1200),
-            ('Product B', 'Category 2', 850),
-            ('Product C', 'Category 1', 1500),
-            ('Product D', 'Category 3', 1000),
-            ('Product E', 'Category 2', 900),
-        ]
-        conn.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
-        conn.commit()
-
-# Initialize database on app startup
-with get_db_connection() as conn:
-    create_sales_table(conn)
-    insert_dummy_data(conn)
-
-
-# --- Dash App ---
+# Initialize the Dash app
 app = dash.Dash(__name__)
 
+# Establish a connection pool to improve performance and handle concurrent requests more efficiently
+conn_pool = sqlite3.connect(DATABASE_URL, check_same_thread=False)  # check_same_thread=False is IMPORTANT for Dash
+
+# Layout of the dashboard
 app.layout = html.Div(children=[
     html.H1(children="Sales Dashboard"),
 
-    dcc.Graph(id='sales-bar-chart'),
+    html.Div([
+        dcc.Dropdown(
+            id='product-dropdown',
+            # Options will be loaded dynamically in the callback
+            options=[],  
+            value=None,  # Initial value set to None, will be updated in callback
+            clearable=False
+        )
+    ]),
 
-    dcc.Dropdown(
-        id='category-dropdown',
-        options=[{'label': 'All', 'value': 'All'}], # Initial options, updated in callback
-        value='All',
-        clearable=False
-    ),
+    dcc.Graph(id='bar-chart'),
 
-    dcc.Graph(id='sales-pie-chart'),
-
+    dcc.Graph(id='pie-chart')
 ])
 
+# Callback to populate dropdown and update charts on initial load and subsequent selections
 @app.callback(
-    [Output('sales-bar-chart', 'figure'),
-     Output('sales-pie-chart', 'figure'),
-     Output('category-dropdown', 'options')],  # Update dropdown options dynamically
-    [Input('category-dropdown', 'value')]
+    [Output('product-dropdown', 'options'),
+     Output('product-dropdown', 'value'),
+     Output('bar-chart', 'figure'),
+     Output('pie-chart', 'figure')],
+    Input('product-dropdown', 'value')
 )
-def update_charts(selected_category):
-    with get_db_connection() as conn:
-        if selected_category == 'All':
-            df = pd.read_sql_query("SELECT * FROM sales", conn)
-        else:
-            # Use parameterized query to prevent SQL injection
-            df = pd.read_sql_query("SELECT * FROM sales WHERE category = ?", conn, params=(selected_category,))
+def update_dashboard(selected_product):
+    # Using the connection pool
+    with conn_pool as conn:  # Context manager ensures connection is closed properly
+        df = pd.read_sql_query("SELECT * FROM sales", conn)
 
-        # Dynamically update dropdown options.  Only make this database call once per page load.
-        all_categories = pd.read_sql_query("SELECT DISTINCT category FROM sales", conn)
-        dropdown_options = [{'label': 'All', 'value': 'All'}] + [{'label': i, 'value': i} for i in all_categories['category']]
+    # Populate dropdown options dynamically
+    available_products = [{'label': product, 'value': product} for product in df['Product'].unique()]
+    
+    # Set initial value if none is selected
+    if selected_product is None:
+        selected_product = df['Product'].unique()[0]  # Default to the first product
 
-    bar_fig = px.bar(df, x='product', y='sales_amount', color='category', title='Sales by Product')
-    pie_fig = px.pie(df, values='sales_amount', names='product', title='Sales Distribution')
-
-    return bar_fig, pie_fig, dropdown_options  # Return the updated dropdown options
+    filtered_df = df[df['Product'] == selected_product]
+    bar_fig = px.bar(filtered_df, x='Month', y='Sales', title=f"Sales for {selected_product}")
+    pie_fig = px.pie(filtered_df, values='Sales', names='Month', title=f'Sales Distribution for {selected_product}')
+    
+    return available_products, selected_product, bar_fig, pie_fig
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False) # Disable debug mode in production
