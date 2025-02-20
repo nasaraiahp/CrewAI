@@ -1,102 +1,106 @@
 # app.py
-import sqlite3
 import pandas as pd
+import sqlite3
 import dash
-from dash import html, dcc, Input, Output, State
+from dash import dcc, html
+from dash.dependencies import Input, Output
 import plotly.express as px
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
 import os
 
-server = Flask(__name__)
-app = dash.Dash(__name__, server=server)
-app.title = "Sales Dashboard"  # Set the title for the dashboard
-
-# Database configuration using SQLAlchemy
-app.server.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sales_data.db'  # Use SQLAlchemy for database management
-app.server.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app.server)
-
-# Define the database model
-class Sale(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    CustomerId = db.Column(db.Integer)
-    FirstName = db.Column(db.String(255))
-    LastName = db.Column(db.String(255))
-    Company = db.Column(db.String(255))
-    City = db.Column(db.String(255))
-    Country = db.Column(db.String(255))
-    Phone1 = db.Column(db.String(255))
-    Phone2 = db.Column(db.String(255))
-    Email = db.Column(db.String(255))
-    SubscriptionDate = db.Column(db.String(255))  # Consider using a proper Date type if possible
-    Website = db.Column(db.String(255))
-
-    def __repr__(self):
-        return f'<Sale {self.id}>'
-
-# Create the database table if it doesn't exist. Remove the CSV loading part
-# as the data should be directly added to the database if SQLAlchemy is used.
-with app.server.app_context():
-    db.create_all()
-
-# Load CSV data only if the database table is empty. Data loading should be a separate process,
-# not part of the application initialization.
-with app.server.app_context():
-    if not Sale.query.first():
-        try:
-            df = pd.read_csv('sales_data.csv')
-            for _, row in df.iterrows():
-                sale = Sale(**row.to_dict())
-                db.session.add(sale)
-            db.session.commit()
-            print("Data loaded from CSV to database.")
-
-        except FileNotFoundError:
-             print("sales_data.csv not found. Starting with an empty database.")
-        except Exception as e:
-            print(f"Error loading data from CSV: {e}")
-            db.session.rollback()
+# Database setup
+DB_PATH = os.path.join(os.getcwd(), 'sales_data.db')  # Use os.path.join for platform compatibility
+CSV_FILE = os.path.join(os.getcwd(), 'sales_data.csv') # Use os.path.join for platform compatibility
 
 
+def create_db_and_table():
+    """Creates the database and table if they don't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, -- Let SQLite handle ID generation
+            CustomerId INTEGER,
+            FirstName TEXT,
+            LastName TEXT,
+            Company TEXT,
+            City TEXT,
+            Country TEXT,
+            Phone1 TEXT,
+            Phone2 TEXT,
+            Email TEXT,
+            SubscriptionDate TEXT,  -- Consider storing as DATETIME
+            Website TEXT 
+        )
+    ''')
+    
+    try:
+        # Check if data already exists to avoid re-insertion
+        cursor.execute("SELECT count(*) FROM sales")
+        if cursor.fetchone()[0] == 0:  # Insert only if table is empty
+            df = pd.read_csv(CSV_FILE)
+            df.to_sql('sales', conn, if_exists='append', index=False)  # Use append if the table might have data
+    except pd.errors.EmptyDataError: # Handle the case of empty CSV
+        pass # or log a warning as appropriate
+    except FileNotFoundError:
+        print(f"CSV file not found at: {CSV_FILE}")  # Handle missing file
+        return # Or raise an exception
+
+    conn.commit()
+    conn.close()
+
+
+
+# Create the database and table initially
+create_db_and_table()
+
+
+
+# Dash app setup
+app = dash.Dash(__name__)
+
+# HTML layout
 app.layout = html.Div([
-    html.H1("Sales Dashboard"),
+    html.H1("Sales Data Dashboard"),
     dcc.Dropdown(
         id='chart-type',
         options=[{'label': i, 'value': i} for i in ['Bar Chart', 'Line Chart', 'Pie Chart']],
-        value='Bar Chart'
+        value='Bar Chart',  # Default chart type
+        clearable=False
     ),
-    dcc.Graph(id='sales-chart'),
-    dcc.Store(id='sales-data-store') # Store data in the browser to avoid repeated queries
+    dcc.Graph(id='sales-chart')
 ])
 
 
+# Callback to update the chart based on selected chart type
 @app.callback(
     Output('sales-chart', 'figure'),
-    Output('sales-data-store', 'data'), # Store the data in the dcc.Store component
-    Input('chart-type', 'value'),
-    State('sales-data-store', 'data') # Get the stored data if available to reduce db calls
+    [Input('chart-type', 'value')]
 )
-def update_chart(chart_type, stored_data):
+def update_chart(chart_type):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        df = pd.read_sql_query("SELECT * FROM sales", conn)
 
-    if stored_data is None: # if there is no stored data, fetch from db
-        with app.server.app_context():
-            df = pd.read_sql(Sale.query.statement, db.session.bind)
-    else:
-        df = pd.DataFrame(stored_data) # Get data from store. This can be useful for large datasets.
+        # Convert 'SubscriptionDate' to datetime for better handling if appropriate:
+        # df['SubscriptionDate'] = pd.to_datetime(df['SubscriptionDate'])
 
+        if chart_type == 'Bar Chart':
+            fig = px.bar(df, x='Country', y='CustomerId', title='Customer Count by Country')
+        elif chart_type == 'Line Chart':
+            fig = px.line(df, x='SubscriptionDate', y='CustomerId', title='Customer Subscriptions Over Time')  # Now handles datetime correctly
+        elif chart_type == 'Pie Chart':
+            fig = px.pie(df, names='Country', values='CustomerId', title='Customer Distribution by Country')
+        else: 
+            fig = px.bar(df, x='Country', y='CustomerId', title='Customer Count by Country')  # Default
+    except pd.io.sql.DatabaseError as e:  # Catch database related errors
+        print(f"Database error: {e}")
+        fig = {} # or an error message figure.
+    finally:
+        conn.close() # ensure the connection is closed even in case of errors.
+    return fig
 
-    if chart_type == 'Bar Chart':
-        fig = px.bar(df, x='Country', y='CustomerId', title='Customers per Country')
-    elif chart_type == 'Line Chart':
-        fig = px.line(df, x='SubscriptionDate', y='CustomerId', title='Customer Subscriptions Over Time')
-    elif chart_type == 'Pie Chart':
-        fig = px.pie(df, values='CustomerId', names='Country', title='Customer Distribution by Country')
-    else:
-        fig = px.bar(df, x='Country', y='CustomerId', title='Customers per Country') # Default chart
-
-    return fig, df.to_dict('records') # return the figure and updated store data
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False, port=int(os.environ.get("PORT", 8050))) # Use environment variables for the port in production
+    app.run_server(debug=True)
