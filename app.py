@@ -1,5 +1,4 @@
-# app.py (Flask application)
-from flask import Flask, render_template
+from flask import Flask, render_template, g
 import sqlite3
 import plotly
 import plotly.graph_objs as go
@@ -7,76 +6,52 @@ import json
 import os
 
 app = Flask(__name__)
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
 
-# Database setup (using a better approach for db creation)
-DATABASE = 'sales_data.db'  # Centralized database name
-
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Access data by column name
-    return conn
-
-def init_db():
-    with app.app_context():  # Correct context for db operations with Flask
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        with open('schema.sql', mode='r') as f: # schema now in a separate file
-            cursor.executescript(f.read())
-        conn.commit()
-        conn.close()
-
-# Initialize the database only once
-if not os.path.exists(DATABASE):
-    init_db()
+app.config.from_mapping(
+    SECRET_KEY='dev'  # Replace with a strong secret key in production
+)
 
 
-# Example schema.sql content for external schema management
-# Note: schema.sql needs to be created manually next to the app.py file.
-# ---
-# CREATE TABLE IF NOT EXISTS sales (
-#     product TEXT,
-#     sales_amount REAL
-# );
-# INSERT OR IGNORE INTO sales (product, sales_amount) VALUES
-# ('Product A', 1500),
-# ('Product B', 1200),
-# ('Product C', 2000),
-# ('Product D', 800),
-# ('Product E', 1700);
-# ---
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
 
 
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
-# Routes
+
+def query_db(query, args=(), one=False):
+    cur = get_db().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
+
+
 @app.route('/')
 def dashboard():
-    conn = get_db_connection()
-    sales_data = conn.execute("SELECT product, sales_amount FROM sales").fetchall()
-    conn.close()
+    bar_data = query_db("SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category")
+    bar_chart = go.Figure(data=[go.Bar(x=[row['product_category'] for row in bar_data],
+                                        y=[row['total_sales'] for row in bar_data])])
+    bar_chart.update_layout(title='Sales by Product Category')
+    bar_chart_json = json.dumps(bar_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
+    pie_data = query_db("SELECT product_category, SUM(sales) AS total_sales FROM sales GROUP BY product_category ORDER BY total_sales DESC LIMIT 5")
+    pie_chart = go.Figure(data=[go.Pie(labels=[row['product_category'] for row in pie_data],
+                                        values=[row['total_sales'] for row in pie_data])])
+    pie_chart.update_layout(title='Top 5 Product Categories by Sales')
+    pie_chart_json = json.dumps(pie_chart, cls=plotly.utils.PlotlyJSONEncoder)
 
-    bar_chart = create_bar_chart(sales_data)
-    pie_chart = create_pie_chart(sales_data)
-
-    return render_template('dashboard.html', bar_chart=bar_chart, pie_chart=pie_chart)
-
-
-def create_bar_chart(sales_data):
-    products = [row['product'] for row in sales_data]  # Accessing with column names
-    amounts = [row['sales_amount'] for row in sales_data]
-    fig = go.Figure(data=[go.Bar(x=products, y=amounts)])
-    fig.update_layout(title="Sales by Product")
-    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
-
-def create_pie_chart(sales_data):
-    products = [row['product'] for row in sales_data]
-    amounts = [row['sales_amount'] for row in sales_data]
-    fig = go.Figure(data=[go.Pie(labels=products, values=amounts)])
-    fig.update_layout(title="Sales Distribution")
-    graphJSON = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-    return graphJSON
+    return render_template('dashboard.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
 
 if __name__ == '__main__':
-    app.run(debug=True) # Never have debug=True in production
+    os.makedirs(app.instance_path, exist_ok=True) # Ensure instance path exists
+    app.run(debug=True)
