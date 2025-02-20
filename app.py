@@ -1,101 +1,81 @@
-# app.py
-import dash
-from dash import dcc, html, Input, Output
-import plotly.express as px
-import pandas as pd
+# app.py (Flask application)
+from flask import Flask, render_template
 import sqlite3
-from pathlib import Path
+import plotly
+import plotly.graph_objs as go
+import json
+import os
 
-# Database setup (using a file path that works across systems)
-DB_FILE = Path(__file__).parent / "sales_data.db"  # Store in the same directory as the script
-DB_CONNECTION_STRING = f"sqlite:///{DB_FILE}"
+app = Flask(__name__)
+
+# Database configuration
+DATABASE = os.path.join(app.instance_path, 'sales_data.db')  # Store DB in instance folder
+
+def get_db():
+    """Returns a database connection."""
+    db = getattr(g, '_database', None)  # Use g to avoid global variables
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row  # Access data by column name
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    """Closes the database connection after each request."""
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    """Initializes the database."""
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('schema.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
 
 
-def create_and_populate_db(db_path):
-    """Creates the database and populates it with dummy data if it doesn't exist."""
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+def init_app(app):
+    """Initializes the application."""
+    app.teardown_appcontext(close_connection) # Register close_connection
+    # Ensure the instance folder exists
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
+    # Initialize the database if it doesn't exist
+    if not os.path.exists(DATABASE):
+        init_db()
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sales (
-            product TEXT,
-            category TEXT,
-            sales_amount REAL
-        )
-    ''')
-
-    # Check if the table is empty before inserting dummy data
-    cursor.execute("SELECT COUNT(*) FROM sales")
-    if cursor.fetchone()[0] == 0:  # Insert only if the table is empty
-        dummy_data = [
-            ('Product A', 'Electronics', 1500),
-            ('Product B', 'Clothing', 1200),
-            ('Product C', 'Electronics', 1800),
-            ('Product D', 'Books', 800),
-            ('Product E', 'Clothing', 1000),
-            ('Product F', 'Books', 900),
-            ('Product G', 'Electronics', 2200),
-            ('Product H', 'Clothing', 1500),
+def populate_sales_table(db):  # Inject db connection
+    """Populates the sales table with initial data if empty."""
+    cursor = db.execute("SELECT COUNT(*) FROM sales").fetchone()
+    if cursor[0] == 0: # Check if table is empty
+        data = [
+            ('Product A', 100, 1500.00),
+            ('Product B', 150, 2250.00),
+            ('Product C', 80, 1200.00),
+            ('Product D', 120, 1800.00),
+            ('Product E', 90, 1350.00),
         ]
-        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
-        conn.commit()
-
-    conn.close()
-
-# Ensure the database file and dummy data exists
-create_and_populate_db(DB_FILE)
+        db.executemany("INSERT INTO sales (product, sales_quantity, sales_revenue) VALUES (?, ?, ?)", data)
+        db.commit()
 
 
 
-app = dash.Dash(__name__)
+@app.route('/')
+def index():
+    db = get_db()  # Get the database connection
+    populate_sales_table(db)  # Populate data if necessary
 
+    sales_data = db.execute("SELECT product, sales_quantity, sales_revenue FROM sales").fetchall()
 
-app.layout = html.Div([
-    html.H1("Sales Dashboard"),
-    dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart'),
-    dcc.Dropdown(
-        id='product-dropdown',
-        options=[], # Options will be loaded dynamically
-        value=[], # Default value as a list since multi=True
-        multi=True,
-        placeholder="Select Products"
-    )
-])
+    # ... (chart creation code remains the same)
 
-@app.callback(
-    Output('product-dropdown', 'options'),
-    Input('product-dropdown', 'value') # Not really used, but needed for initial loading. Dash 3.0+ has other features.
-)
-def update_dropdown_options(_): # Input not used but required by Dash.
-    conn = sqlite3.connect(DB_FILE)  # Use the constant for consistency
-    df = pd.read_sql_query("SELECT DISTINCT product FROM sales", conn)
-    conn.close()
+    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
 
-    return [{'label': product, 'value': product} for product in df['product'].tolist()]
-
-
-
-@app.callback(
-    Output('bar-chart', 'figure'),
-    Output('pie-chart', 'figure'),
-    Input('product-dropdown', 'value')
-)
-def update_charts(selected_products):
-
-    # Use the more efficient read_sql with the connection string, no need to open/close within callback
-    df = pd.read_sql("SELECT * FROM sales", DB_CONNECTION_STRING) 
-
-
-    if selected_products: # Check if the list is not empty
-        df = df[df['product'].isin(selected_products)]  # Filter data
-
-    bar_fig = px.bar(df, x='product', y='sales_amount', color='category', title="Sales by Product and Category")
-    pie_fig = px.pie(df, values='sales_amount', names='category', title="Sales Distribution by Category")
-
-    return bar_fig, pie_fig
-
-
+# Call the init_app function to initialize the app
+init_app(app)
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
