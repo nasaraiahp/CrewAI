@@ -4,62 +4,98 @@ from dash import dcc, html, Input, Output
 import plotly.express as px
 import pandas as pd
 import sqlite3
-import os
+from pathlib import Path
 
-# Security best practice: Store sensitive information (like database path) in environment variables
-DATABASE_URL = os.environ.get("DATABASE_URL", "sales_data.db")  # Default to sales_data.db if not set
+# Database setup (using a file path that works across systems)
+DB_FILE = Path(__file__).parent / "sales_data.db"  # Store in the same directory as the script
+DB_CONNECTION_STRING = f"sqlite:///{DB_FILE}"
 
-# Initialize the Dash app
+
+def create_and_populate_db(db_path):
+    """Creates the database and populates it with dummy data if it doesn't exist."""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sales (
+            product TEXT,
+            category TEXT,
+            sales_amount REAL
+        )
+    ''')
+
+    # Check if the table is empty before inserting dummy data
+    cursor.execute("SELECT COUNT(*) FROM sales")
+    if cursor.fetchone()[0] == 0:  # Insert only if the table is empty
+        dummy_data = [
+            ('Product A', 'Electronics', 1500),
+            ('Product B', 'Clothing', 1200),
+            ('Product C', 'Electronics', 1800),
+            ('Product D', 'Books', 800),
+            ('Product E', 'Clothing', 1000),
+            ('Product F', 'Books', 900),
+            ('Product G', 'Electronics', 2200),
+            ('Product H', 'Clothing', 1500),
+        ]
+        cursor.executemany("INSERT INTO sales VALUES (?, ?, ?)", dummy_data)
+        conn.commit()
+
+    conn.close()
+
+# Ensure the database file and dummy data exists
+create_and_populate_db(DB_FILE)
+
+
+
 app = dash.Dash(__name__)
 
-# Establish a connection pool to improve performance and handle concurrent requests more efficiently
-conn_pool = sqlite3.connect(DATABASE_URL, check_same_thread=False)  # check_same_thread=False is IMPORTANT for Dash
 
-# Layout of the dashboard
-app.layout = html.Div(children=[
-    html.H1(children="Sales Dashboard"),
-
-    html.Div([
-        dcc.Dropdown(
-            id='product-dropdown',
-            # Options will be loaded dynamically in the callback
-            options=[],  
-            value=None,  # Initial value set to None, will be updated in callback
-            clearable=False
-        )
-    ]),
-
+app.layout = html.Div([
+    html.H1("Sales Dashboard"),
     dcc.Graph(id='bar-chart'),
-
-    dcc.Graph(id='pie-chart')
+    dcc.Graph(id='pie-chart'),
+    dcc.Dropdown(
+        id='product-dropdown',
+        options=[], # Options will be loaded dynamically
+        value=[], # Default value as a list since multi=True
+        multi=True,
+        placeholder="Select Products"
+    )
 ])
 
-# Callback to populate dropdown and update charts on initial load and subsequent selections
 @app.callback(
-    [Output('product-dropdown', 'options'),
-     Output('product-dropdown', 'value'),
-     Output('bar-chart', 'figure'),
-     Output('pie-chart', 'figure')],
+    Output('product-dropdown', 'options'),
+    Input('product-dropdown', 'value') # Not really used, but needed for initial loading. Dash 3.0+ has other features.
+)
+def update_dropdown_options(_): # Input not used but required by Dash.
+    conn = sqlite3.connect(DB_FILE)  # Use the constant for consistency
+    df = pd.read_sql_query("SELECT DISTINCT product FROM sales", conn)
+    conn.close()
+
+    return [{'label': product, 'value': product} for product in df['product'].tolist()]
+
+
+
+@app.callback(
+    Output('bar-chart', 'figure'),
+    Output('pie-chart', 'figure'),
     Input('product-dropdown', 'value')
 )
-def update_dashboard(selected_product):
-    # Using the connection pool
-    with conn_pool as conn:  # Context manager ensures connection is closed properly
-        df = pd.read_sql_query("SELECT * FROM sales", conn)
+def update_charts(selected_products):
 
-    # Populate dropdown options dynamically
-    available_products = [{'label': product, 'value': product} for product in df['Product'].unique()]
-    
-    # Set initial value if none is selected
-    if selected_product is None:
-        selected_product = df['Product'].unique()[0]  # Default to the first product
+    # Use the more efficient read_sql with the connection string, no need to open/close within callback
+    df = pd.read_sql("SELECT * FROM sales", DB_CONNECTION_STRING) 
 
-    filtered_df = df[df['Product'] == selected_product]
-    bar_fig = px.bar(filtered_df, x='Month', y='Sales', title=f"Sales for {selected_product}")
-    pie_fig = px.pie(filtered_df, values='Sales', names='Month', title=f'Sales Distribution for {selected_product}')
-    
-    return available_products, selected_product, bar_fig, pie_fig
+
+    if selected_products: # Check if the list is not empty
+        df = df[df['product'].isin(selected_products)]  # Filter data
+
+    bar_fig = px.bar(df, x='product', y='sales_amount', color='category', title="Sales by Product and Category")
+    pie_fig = px.pie(df, values='sales_amount', names='category', title="Sales Distribution by Category")
+
+    return bar_fig, pie_fig
+
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False) # Disable debug mode in production
+    app.run_server(debug=True)
