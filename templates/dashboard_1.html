@@ -1,25 +1,25 @@
 <!-- templates/index.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Sales Dashboard</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Load Plotly from CDN with integrity check -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js" integrity="sha384-..." crossorigin="anonymous"></script>
 </head>
 <body>
     <h1>Sales Dashboard</h1>
 
     <div id="bar-chart"></div>
-    <div id="pie-chart"></div>
-
-
     <script>
-        var bar_chart_data = JSON.parse('{{ bar_chart | safe }}'); // Parse JSON string
-        Plotly.newPlot('bar-chart', bar_chart_data.data, bar_chart_data.layout);
-
-
-        var pie_chart_data = JSON.parse('{{ pie_chart | safe }}'); // Parse JSON string
-        Plotly.newPlot('pie-chart', pie_chart_data.data, pie_chart_data.layout);
+        var bar_chart_data = {{ bar_chart | safe }}; // Safe filter for HTML rendering. Consider JSON.parse as a separation of concerns
+        Plotly.newPlot('bar-chart', JSON.parse(bar_chart_data));
     </script>
 
+    <div id="pie-chart"></div>
+    <script>
+        var pie_chart_data = {{ pie_chart | safe }};
+        Plotly.newPlot('pie-chart', JSON.parse(pie_chart_data));
+    </script>
 </body>
 </html>
