@@ -1,97 +1,96 @@
 # app.py
 import dash
-from dash import dcc
-from dash import html
-from dash.dependencies import Input, Output
+from dash import dcc, html, dash_table
+from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
 import sqlite3
+import base64
+import io
 import os
 
-# Database setup
-db_file = 'sales_database.db'
-
-# CSV file path (make it configurable)
-csv_file_path = os.getenv('SALES_DATA_CSV', 'sales_data.csv') # Use environment variable or default
-
-# Create the database file only if it doesn't exist.  This prevents overwriting.
-if not os.path.exists(db_file):
-    conn = sqlite3.connect(db_file)
-    try:
-        df_csv = pd.read_csv(csv_file_path)  # Adjust data types if necessary
-        df_csv.to_sql('sales', conn, if_exists='replace', index=False)
-    except pd.errors.EmptyDataError:  # Handle empty CSV
-        print("Error: sales_data.csv is empty or not found. Please provide valid data.")
-        exit(1)  # Terminate if CSV is empty/missing
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        exit(1)
-    finally:
-        conn.close()
-
-
-# Dash app initialization
 app = dash.Dash(__name__)
 
-# --- Prevent Cross-Site Scripting (XSS) ---
-app.title = "Sales Dashboard"  # Set a title for the app
+# Database setup (better to do this outside the callback)
+db_path = "customer_data.db"  # Use a consistent path
+if not os.path.exists(db_path):  # Create the database if it doesn't exist
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE customers (
+            "Index" INTEGER PRIMARY KEY AUTOINCREMENT,  -- Make Index a primary key
+            "Customer ID" INTEGER,
+            "First Name" TEXT,
+            "Last Name" TEXT,
+            "Company" TEXT,
+            "City" TEXT,
+            "Country" TEXT,
+            "Phone 1" TEXT,
+            "Phone 2" TEXT,
+            "Email" TEXT,
+            "Subscription Date" TEXT,
+            "Website" TEXT
+        )
+    ''')  # Use parameterized queries or a safer method to create the table schema
+    conn.commit()
+    conn.close()
 
-# --- Layout ---
+
+# HTML layout
 app.layout = html.Div([
-    html.H1("Sales Dashboard"),
-    dcc.Dropdown(
-        id='product-dropdown',
-        options=[],  # Initialize as empty, will be populated in callback
-        value=None,  # Don't set a default here, handle in callback after data load
-        multi=False
+    html.H1("Customer Data Dashboard"),
+    dcc.Upload(
+        id='upload-data',
+        children=html.Button('Upload CSV'),
+        multiple=False,
+        accept=".csv"  # Restrict to CSV files
     ),
+    html.Div(id='output-data-upload'),
     dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart'),
+    dcc.Graph(id='pie-chart')
 ])
 
 
-# --- Callback to populate dropdown and update charts ---
+# Callback to handle data upload and display
 @app.callback(
-    [Output('product-dropdown', 'options'),
-     Output('product-dropdown', 'value'),  # Set default value here
-     Output('bar-chart', 'figure'),
-     Output('pie-chart', 'figure')],
-    Input('product-dropdown', 'value')
+    Output('output-data-upload', 'children'),
+    Output('bar-chart', 'figure'),
+    Output('pie-chart', 'figure'),
+    Input('upload-data', 'contents'),
+    State('upload-data', 'filename')
 )
-def update_dashboard(selected_product):
-    conn = sqlite3.connect(db_file)
-    try:
-        df = pd.read_sql_query("SELECT * FROM sales", conn)
+def update_output(contents, filename):
+    if contents is not None:
+        try:  # Add try-except block for better error handling
+            content_type, content_string = contents.split(',')
+            decoded = base64.b64decode(content_string)
+            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
 
-        # Populate dropdown options
-        dropdown_options = [{'label': i, 'value': i} for i in df['Product'].unique()]
-        default_value = df['Product'].iloc[0] if not df.empty else None
+            # Store data in SQLite database (using context manager)
+            conn = sqlite3.connect(db_path)
+            df.to_sql('customers', conn, if_exists='replace', index=False) # Consider 'append' instead of 'replace'
+            conn.close()
 
-        # Filter data based on selected product
-        if selected_product is not None:  # Handle initial callback where selected_product is None
-            if isinstance(selected_product, str):
-                filtered_df = df[df['Product'] == selected_product]
-            elif isinstance(selected_product, list):  # For future multi-select support
-                filtered_df = df[df['Product'].isin(selected_product)]
-            else:
-                filtered_df = df  # Default to show all if selected_product is invalid
-        else:
-            filtered_df = df
+            # Create bar chart
+            bar_fig = px.bar(df, x='Country', y='Customer ID', title='Customers per Country')
 
+            # Create pie chart
+            city_counts = df['City'].value_counts()
+            pie_fig = px.pie(city_counts, values=city_counts.values, names=city_counts.index,
+                             title='Customer Distribution by City')
 
-        # Create figures
-        bar_fig = px.bar(filtered_df, x='Region', y='Sales', color='Product',
-                         title=f'Sales by Region for {selected_product or "All Products"}')  # Handle None
-        pie_fig = px.pie(filtered_df, values='Sales', names='Region',
-                         title=f'Sales Distribution for {selected_product or "All Products"}')  # Handle None
+            # Display the uploaded data as a table
+            table = dash_table.DataTable(
+                data=df.to_dict('records'),
+                columns=[{'name': i, 'id': i} for i in df.columns],
+                page_size=10  # Add pagination for large datasets
+            )
 
-        return dropdown_options, default_value, bar_fig, pie_fig
+            return table, bar_fig, pie_fig
+        except Exception as e:
+            return html.Div(f"Error processing file: {e}"), None, None # Display error messages
 
-    except Exception as e:  # Handle errors
-        print(f"An error occurred: {e}")
-        return [], None, {}, {}  # Return empty values on error
-    finally:
-        conn.close()
+    return None, None, None  # Return None for figures if no data is uploaded
 
 
 
