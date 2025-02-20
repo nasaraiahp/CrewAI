@@ -3,111 +3,121 @@ import pandas as pd
 import sqlite3
 import os
 
-def load_csv_to_sqlite(csv_file, db_file, table_name):
-    """Loads data from a CSV file into an SQLite database table."""
+def load_csv_to_sqlite(csv_filepath, db_filepath, table_name):
+    """Loads data from a CSV file into an SQLite database table.
 
+    Args:
+        csv_filepath: Path to the CSV file.
+        db_filepath: Path to the SQLite database file.
+        table_name: Name of the table to create or insert into.
+    """
     try:
-        # Use pathlib for better path handling
-        db_path = os.path.abspath(db_file)
+        # Check if the CSV file exists
+        if not os.path.exists(csv_filepath):
+            raise FileNotFoundError(f"CSV file not found: {csv_filepath}")
 
-        conn = sqlite3.connect(db_path)  # Apply absolute path for database file
-        cursor = conn.cursor()
+        # Read the CSV file into a Pandas DataFrame
+        df = pd.read_csv(csv_filepath)
 
-        # Parameterize the query to prevent SQL injection (though low risk here, it's good practice)
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table_name,))
-        if not cursor.fetchone():
-            # Create the table if it doesn't exist
-            df = pd.read_csv(csv_file)  # Read CSV to infer schema
-            df.to_sql(table_name, conn, if_exists='replace', index=False)
-            print(f"Table '{table_name}' created and data loaded successfully.")
-        else:
-            df = pd.read_csv(csv_file)
-            df.to_sql(table_name, conn, if_exists='append', index=False)  # Append if table exists
-            print(f"Data loaded into existing table '{table_name}' successfully.")
+        # Use a context manager for the database connection
+        with sqlite3.connect(db_filepath) as conn:
+            # Create a cursor object
+            cursor = conn.cursor()
 
-        conn.commit()
+            # Use parameterized SQL to prevent SQL injection vulnerabilities
+            cursor.execute(f'''
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    CustomerId INTEGER,
+                    FirstName TEXT,
+                    LastName TEXT,
+                    Company TEXT,
+                    City TEXT,
+                    Country TEXT,
+                    Phone1 TEXT,
+                    Phone2 TEXT,
+                    Email TEXT,
+                    SubscriptionDate TEXT,
+                    Website TEXT
+                )
+            ''')
+
+
+            # Insert data using executemany for efficiency
+            placeholders = ','.join(['?'] * len(df.columns))
+            insert_sql = f"INSERT OR IGNORE INTO {table_name} ({','.join(df.columns)}) VALUES ({placeholders})" # Use INSERT OR IGNORE to handle potential duplicates
+            cursor.executemany(insert_sql, df.values.tolist())
+
+
+            # Commit is handled automatically by the context manager
+
+        print(f"Data from '{csv_filepath}' loaded successfully into '{table_name}' table in '{db_filepath}'")
 
     except Exception as e:
         print(f"An error occurred: {e}")
 
-    finally:
-        if conn:
-            conn.close()
+
+
+# Example usage
+load_csv_to_sqlite('customer_data.csv', 'sales_data.db', 'customers')
+
 
 
 # app.py (Dash app)
+
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html
+from dash.dependencies import Input, Output
 import plotly.express as px
 import pandas as pd
 import sqlite3
-import os
-
 
 app = dash.Dash(__name__)
 
-DATABASE_PATH = os.path.abspath('sales_data.db')
+# Database filepath (consistent with data_loader.py)
+DB_FILEPATH = 'sales_data.db'
 
-# Layout of the dashboard
+# Layout
 app.layout = html.Div([
     html.H1("Sales Data Dashboard"),
-
-    # Dropdown for Country selection
-    dcc.Dropdown(id='country-dropdown',
-                 options=[],  # Dynamically populated later
-                 value=None,  # Ensure initial value is None for multi-select
-                 multi=True,
-                 placeholder="Select Country/Countries"
-                 ),
-
-    dcc.Graph(id='sales-bar-chart'),
-    dcc.Graph(id='customer-pie-chart')
+    dcc.Dropdown(
+        id='chart-type',
+        options=[{'label': 'Bar Chart', 'value': 'bar'},
+                 {'label': 'Line Chart', 'value': 'line'},
+                 {'label': 'Pie Chart', 'value': 'pie'}],
+        value='bar'
+    ),
+    dcc.Graph(id='sales-chart'),
 ])
 
-
+# Callback
 @app.callback(
-    [Output('sales-bar-chart', 'figure'),
-     Output('customer-pie-chart', 'figure'),
-     Output('country-dropdown', 'options')],
-    Input('country-dropdown', 'value')
-
+    Output('sales-chart', 'figure'),
+    Input('chart-type', 'value')
 )
-def update_charts(selected_countries):
-    conn = sqlite3.connect(DATABASE_PATH) 
-    
-    # Use parameterized queries consistently to prevent SQL injection
-    base_pie_query = "SELECT Country, COUNT(*) AS CustomerCount FROM customers GROUP BY Country"
-    base_bar_query = "SELECT SubscriptionDate, COUNT(*) AS SubscriptionCount FROM customers GROUP BY SubscriptionDate"
+def update_chart(chart_type):
+    # Use a context manager for database connections within the callback
+    with sqlite3.connect(DB_FILEPATH) as conn:
+        # Use pandas.read_sql_query for simpler database interaction
+        df = pd.read_sql_query(
+            "SELECT Country, COUNT(*) AS CustomerCount FROM customers GROUP BY Country", conn
+        )
+
+    fig = {}  # Initialize fig
+    if df.empty:
+        return fig  # Handle empty DataFrame
 
 
-    if selected_countries:
-        pie_query = f"SELECT Country, COUNT(*) AS CustomerCount FROM customers WHERE Country IN ({','.join('?'*len(selected_countries))}) GROUP BY Country"
-        bar_query = f"SELECT SubscriptionDate, COUNT(*) AS SubscriptionCount FROM customers WHERE Country IN ({','.join('?'*len(selected_countries))}) GROUP BY SubscriptionDate"
+    if chart_type == 'bar':
+        fig = px.bar(df, x='Country', y='CustomerCount', title='Customer Count by Country')
+    elif chart_type == 'line':
+        fig = px.line(df, x='Country', y='CustomerCount', title='Customer Count by Country')
+    elif chart_type == 'pie':
+        fig = px.pie(df, values='CustomerCount', names='Country', title='Customer Distribution by Country')
 
-        df_pie = pd.read_sql_query(pie_query, conn, params=selected_countries)
-        df_bar = pd.read_sql_query(bar_query, conn, params=selected_countries)
-
-    else:
-        df_pie = pd.read_sql_query(base_pie_query, conn)  # Execute query without WHERE clause if no countries selected
-        df_bar = pd.read_sql_query(base_bar_query, conn)
-
-
-
-    pie_chart = px.pie(df_pie, values='CustomerCount', names='Country', title='Customer Distribution by Country')
-    bar_chart = px.bar(df_bar, x='SubscriptionDate', y='SubscriptionCount', title='Subscriptions Over Time')
-
-    # Populate dropdown options
-    country_options = [{'label': country, 'value': country} for country in pd.read_sql_query("SELECT DISTINCT Country FROM customers", conn)['Country'].unique()]
-    conn.close()
-
-    return bar_chart, pie_chart, country_options
+    return fig
 
 
 
 if __name__ == '__main__':
-    # Load data if the database doesn't exist yet
-    if not os.path.exists("sales_data.db"):
-        load_csv_to_sqlite("customer_data.csv", "sales_data.db", "customers")  # Make sure customer_data.csv exists
-
-
     app.run_server(debug=True)
