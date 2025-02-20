@@ -1,66 +1,80 @@
-from flask import Flask, render_template, g
+# app.py
+import dash
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
 import sqlite3
-import plotly
-import plotly.graph_objs as go
-import json
 import os
 
-app = Flask(__name__)
+# Database setup (best practice to separate configuration)
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'sales_data.db')  # Use environment variable if available
 
-# Database setup
-DATABASE = os.path.join(app.root_path, 'sales_data.db')  # Store DB in app directory
+# Create a connection to the SQLite database (using a context manager for safe closing)
+def get_db_connection():
+    return sqlite3.connect(DATABASE_PATH)
 
-def get_db():
-    """Opens a new database connection if there is none yet for the
-    current application context.
-    """
-    if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row # Access data by name instead of index
-    return g.db
+# Data loading and initialization (perform this only once)
+with get_db_connection() as conn:
+    # Sample sales data (in real application, load from an external source like CSV)
+    sales_data = {
+        'Product': ['A', 'B', 'C', 'D', 'E'],
+        'Sales': [1200, 850, 1500, 1000, 900],
+        'Region': ['North', 'South', 'East', 'West', 'North']
+    }
+
+    df = pd.DataFrame(sales_data)
+
+    # Store the DataFrame in the SQLite database (only if it doesn't exist)
+    df.to_sql('sales', conn, if_exists='replace', index=False)
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("Sales Dashboard"),
+
+    html.Div([
+        html.Label("Select Region:"),
+        dcc.Dropdown(
+            id='region-dropdown',
+            options=[], # Options will be loaded dynamically
+            value=[],  # Initially, no region selected (list for multi-select)
+            multi=True, 
+            placeholder="All Regions"
+        ),
+    ]),
+
+    dcc.Graph(id='sales-bar-chart'),
+    dcc.Graph(id='sales-pie-chart')
+])
+
+@app.callback(
+    Output('region-dropdown', 'options'),
+    Input('region-dropdown', 'value') # Not used, but ensures the callback is triggered on startup
+)
+def load_region_options(_):  # _ as the input is not actually used
+    with get_db_connection() as conn:
+        region_options = pd.read_sql_query("SELECT DISTINCT Region FROM sales", conn)['Region'].tolist()
+        return [{'label': region, 'value': region} for region in region_options]
 
 
-def close_db(e=None):
-    """If this request connected to the database, close the
-    connection.
-    """
-    db = g.pop('db', None)
+@app.callback(
+    [Output('sales-bar-chart', 'figure'),
+     Output('sales-pie-chart', 'figure')],
+    [Input('region-dropdown', 'value')]
+)
+def update_charts(selected_regions):
+    with get_db_connection() as conn:
+        if selected_regions:
+            query = "SELECT * FROM sales WHERE Region IN ({})".format(','.join(['?'] * len(selected_regions)))
+            filtered_df = pd.read_sql_query(query, conn, params=selected_regions)
+        else:
+            filtered_df = pd.read_sql_query("SELECT * FROM sales", conn)
 
-    if db is not None:
-        db.close()
+    bar_fig = px.bar(filtered_df, x='Product', y='Sales', title='Sales by Product')
+    pie_fig = px.pie(filtered_df, values='Sales', names='Product', title='Sales Distribution')
 
-
-def init_db():
-    db = get_db()
-    with app.open_resource('schema.sql', mode='r') as f: #Execute the SQL schema file
-        db.cursor().executescript(f.read())
-    db.commit()
-
-
-
-@app.route('/')
-def index():
-    db = get_db()  #Using database connection
-
-    # Data for bar chart (parameterized query)
-    bar_data = db.execute("SELECT category, SUM(sales_quantity) AS total_sales FROM sales GROUP BY category").fetchall()
-    bar_labels = [row['category'] for row in bar_data] #accessing by column name
-    bar_values = [row['total_sales'] for row in bar_data]  #accessing by column name
-
-    # Data for pie chart (parameterized query)
-    pie_data = db.execute("SELECT product, sales_quantity FROM sales").fetchall()
-    pie_labels = [row['product'] for row in pie_data]  #accessing by column name
-    pie_values = [row['sales_quantity'] for row in pie_data]  #accessing by column name
-
-    # ... (rest of the chart creation code is the same)
-
-
-    return render_template('index.html', bar_chart=bar_chart_json, pie_chart=pie_chart_json)
-
-#Register closing and initialize database functions
-app.teardown_appcontext(close_db)
-app.cli.command('initdb')(init_db)
+    return bar_fig, pie_fig
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run_server(debug=True)
