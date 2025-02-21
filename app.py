@@ -1,93 +1,83 @@
-# app.py
-import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output
-import plotly.express as px
 import pandas as pd
 import sqlite3
+import dash
+from dash import dcc, html, Input, Output
+from dash.dash_table import DataTable
+import plotly.express as px
+import plotly.graph_objects as go
 from flask import Flask
 
-# Initialize Flask server first
-server = Flask(__name__)
-# Initialize the Dash app with the server
-app = dash.Dash(__name__, server=server)
+# --- Configuration ---
+DATABASE_PATH = 'sales_data.db'  # Use a constant for the database path
+CSV_FILE = 'sales_data.csv'  # Use a constant for the CSV file path
 
-# Database setup (consider moving these details to a separate config file)
-DATABASE = 'mydatabase.db'
+# --- Data Loading and Database Interaction ---
 
-def create_table(conn):
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS sales_data (
-            region TEXT,
-            product TEXT,
-            sales INTEGER
-        )
-    ''')
+def load_data_to_db(csv_file, db_path):
+    """Loads data from a CSV file into an SQLite database.
 
+    Args:
+        csv_file (str): Path to the CSV file.
+        db_path (str): Path to the SQLite database file.
 
-def insert_data(conn):
-    data = [
-        ('North', 'Product A', 120),
-        ('North', 'Product B', 80),
-        ('South', 'Product A', 150),
-        ('South', 'Product B', 100),
-        ('East', 'Product A', 200),
-        ('East', 'Product B', 50),
-    ]
-    conn.executemany("INSERT OR IGNORE INTO sales_data (region, product, sales) VALUES (?, ?, ?)", data)
-
-
-def get_data(conn, selected_product):
+    Returns:
+        pandas.DataFrame or None: The DataFrame if loading is successful, None otherwise.
+    """
     try:
-        df = pd.read_sql_query(
-            "SELECT * FROM sales_data WHERE product=?", conn, params=(selected_product,)
-        )
+        conn = sqlite3.connect(db_path)  # No need to explicitly close if using a context manager
+        df = pd.read_csv(csv_file, parse_dates=['SubscriptionDate'])  # Parse dates on load
+
+        with conn:  # Use a context manager to automatically commit/rollback and close the connection
+            df.to_sql('sales_data', conn, if_exists='replace', index=False)
+        print("Data loaded successfully!")
         return df
-    except Exception as e:  # More specific exception handling in production
-        print(f"Database query error: {e}")
-        return pd.DataFrame()  # Return empty DataFrame to handle errors gracefully
+
+    except Exception as e:
+        print(f"An error occurred during data loading: {e}")
+        return None
+
+# --- Dash App ---
+server = Flask(__name__)
+app = dash.Dash(__name__, server=server, suppress_callback_exceptions=True) # Suppress callback exceptions
+
+df = load_data_to_db(CSV_FILE, DATABASE_PATH)
+
+if df is not None:
+    app.layout = html.Div([
+        html.H1("Sales Dashboard"),
+        dcc.Dropdown(
+            id='country-dropdown',
+            options=[{'label': country, 'value': country} for country in df['Country'].unique()],
+            value=df['Country'].iloc[0] if not df['Country'].empty else None,  # Handle potential empty DataFrame
+            multi=False,
+            clearable=False #Prevent clearing the selection entirely, ensuring there's always a value for the callbacks
+        ),
+        dcc.Graph(id='bar-chart'),
+        dcc.Graph(id='line-chart'),
+        dcc.Graph(id='pie-chart')
+    ])
 
 
-# Create and populate table on startup
-with sqlite3.connect(DATABASE) as conn:
-    create_table(conn)
-    insert_data(conn)
+    @app.callback(
+        [Output('bar-chart', 'figure'),
+         Output('line-chart', 'figure'),
+         Output('pie-chart', 'figure')],
+        Input('country-dropdown', 'value')
+    )
+    def update_charts(selected_country):
+        filtered_df = df[df['Country'] == selected_country]
 
 
+        bar_fig = px.bar(filtered_df, x='City', title=f'Customers per City ({selected_country})')
 
-# Layout of the dashboard
-app.layout = html.Div([
-    html.H1("Sales Dashboard"),
+        line_fig = px.line(filtered_df, x='SubscriptionDate', y='CustomerId',
+                           title=f'Subscriptions Over Time ({selected_country})')
 
-    dcc.Dropdown(
-        id='product-dropdown',
-        options=[{'label': i, 'value': i} for i in ['Product A', 'Product B']],
-        value='Product A'
-    ),
-    dcc.Graph(id='bar-chart'),
-    dcc.Graph(id='pie-chart')
-])
+        pie_fig = px.pie(filtered_df, values='CustomerId', names='Company',
+                         title=f'Customer Distribution by Company ({selected_country})')
+
+        return bar_fig, line_fig, pie_fig
 
 
-
-# Callback to update the charts
-@app.callback(
-    [Output('bar-chart', 'figure'), Output('pie-chart', 'figure')],
-    [Input('product-dropdown', 'value')]
-)
-def update_charts(selected_product):
-    with sqlite3.connect(DATABASE) as conn:
-        df = get_data(conn, selected_product)
-
-    if df.empty:
-        return {}, {}  # Return empty figures if data retrieval fails
-
-
-    bar_fig = px.bar(df, x='region', y='sales', title=f"Sales by Region for {selected_product}")
-    pie_fig = px.pie(df, values='sales', names='region', title=f"Sales Distribution for {selected_product}")
-    return bar_fig, pie_fig
-
-
-# Run the app using the Flask server's run method
-if __name__ == '__main__':
-    app.run_server(debug=True)
+    if __name__ == '__main__':
+        app.run_server(debug=True)
