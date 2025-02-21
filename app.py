@@ -1,80 +1,141 @@
+# data_loader.py
 import pandas as pd
 import sqlite3
-from dash import Dash, html, dcc
-import plotly.express as px
-from flask import Flask
 import os
 
-# --- Configuration ---
-DATABASE_PATH = os.path.join(os.getcwd(), 'sales_data.db')  # Use os.path.join for platform compatibility
-CSV_PATH = 'your_data.csv'  # Store CSV path separately
-DEBUG_MODE = os.environ.get("DEBUG_MODE", "False").lower() == "true" # Get debug mode from environment variable
-
-# --- Data Loading and Database Interaction ---
-def create_and_populate_db(db_path, csv_path):
-    """Creates the database table and populates it with data from the CSV."""
+def load_data(csv_file, db_file):
+    """Loads data from a CSV file into an SQLite database."""
     try:
-        with sqlite3.connect(db_path) as conn:  # Use context manager for automatic connection closing
+        # Use context manager for automatic connection closing
+        with sqlite3.connect(db_file) as conn:
             cursor = conn.cursor()
 
-            create_table_query = """
-            CREATE TABLE IF NOT EXISTS customers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                CustomerId INTEGER,
-                FirstName TEXT,
-                LastName TEXT,
-                Company TEXT,
-                City TEXT,
-                Country TEXT,
-                Phone1 TEXT,
-                Phone2 TEXT,
-                Email TEXT,
-                SubscriptionDate TEXT,
-                Website TEXT
-            )
-            """
-            cursor.execute(create_table_query)
+            # Create table if it doesn't exist (using parameterized SQL for table creation is generally not necessary)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS customers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    CustomerId INTEGER,
+                    FirstName TEXT,
+                    LastName TEXT,
+                    Company TEXT,
+                    City TEXT,
+                    Country TEXT,
+                    Phone1 TEXT,
+                    Phone2 TEXT,
+                    Email TEXT,
+                    SubscriptionDate TEXT,
+                    Website TEXT
+                )
+            ''')
 
-            try:
-                df = pd.read_csv(csv_path)
-                df.to_sql('customers', conn, if_exists='replace', index=False)
-            except FileNotFoundError:
-                print(f"CSV file not found at {csv_path}. Database table created but not populated.")
-                return False # Indicate that CSV loading failed
+            # Load CSV data into DataFrame
+            df = pd.read_csv(csv_file)
 
-        return True
+            # Insert data into the table using executemany for efficiency
+            placeholders = ', '.join(['?'] * len(df.columns))
+            query = f"INSERT OR REPLACE INTO customers ({', '.join(df.columns)}) VALUES ({placeholders})"
+            cursor.executemany(query, df.values.tolist())
+
+            conn.commit()
+            print(f"Data loaded successfully from {csv_file} to {db_file}")
 
     except Exception as e:
-        print(f"An error occurred during database operations: {e}")
-        return False
-
-# Create and populate the database
-if create_and_populate_db(DATABASE_PATH, CSV_PATH):
-    print("Database successfully created and populated.")
-else:
-    print("Database creation or population encountered an issue.")
+        print(f"Error loading data: {e}")
 
 
-# --- Dash/Flask App ---
-server = Flask(__name__)
-app = Dash(__name__, server=server)
 
-# Data Query Function (for better organization and reusability)
-def query_data(db_path, query="SELECT * FROM customers"):
-    with sqlite3.connect(db_path) as conn:
-        df = pd.read_sql_query(query, conn)
-    return df
+# Example Usage
+csv_filepath = 'customer_data.csv'  # Replace with your CSV file path
+db_filepath = 'customer_database.db' # Replace with your desired database file path
 
-df = query_data(DATABASE_PATH) # Query data only after successful database creation
+# Check if the database file exists, delete if it does to avoid appending data
+if os.path.exists(db_filepath):
+    os.remove(db_filepath)
+
+load_data(csv_filepath, db_filepath)
 
 
-# Dashboard Layout
-app.layout = html.Div(children=[
-    html.H1(children="Sales Dashboard"),
 
-    # ... (Graphs remain the same, but consider adding error handling if df is empty) 
 
+# app.py (Dash app)
+import dash
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
+import sqlite3
+
+app = dash.Dash(__name__)
+
+# Database connection (using a context manager is best practice for closing)
+db_filepath = 'customer_database.db'  # Use the same database file as in data_loader.py
+
+
+# Layout of the dashboard
+app.layout = html.Div([
+    html.H1("Customer Sales Dashboard"),
+
+    dcc.Dropdown(
+        id='country-dropdown',
+        options=[], # Initialize as empty, populate in callback
+        value=None,
+        placeholder="Select a Country",
+        multi=True
+    ),
+    dcc.Graph(id='bar-chart'),
+    dcc.Graph(id='line-chart'),
+    dcc.Graph(id='pie-chart')
 ])
 
+
+
+# Callback to populate dropdown and initialize charts
+@app.callback(
+    [Output('country-dropdown', 'options'),
+     Output('bar-chart', 'figure'),
+     Output('line-chart', 'figure'),
+     Output('pie-chart', 'figure')],
+    Input('country-dropdown', 'value')  # This input triggers initial load
+)
+def initial_load(selected_countries):
+    with sqlite3.connect(db_filepath) as conn:  # Context manager for connection
+
+        country_options = [{'label': i, 'value': i} for i in pd.read_sql_query("SELECT DISTINCT Country FROM customers", conn)['Country'].unique()]
+        ctx = dash.callback_context
+        if not ctx.triggered: # Initial load
+           selected_countries=None
+        return country_options, update_bar_chart(selected_countries), update_line_chart(selected_countries), update_pie_chart(selected_countries)
+
+# Callback functions for chart updates (bar, line, pie) - simplified
+def update_bar_chart(selected_countries):
+    with sqlite3.connect(db_filepath) as conn:
+        query = "SELECT Country, COUNT(*) AS CustomerCount FROM customers"
+        if selected_countries:
+          query += f" WHERE Country IN ({', '.join(['?']*len(selected_countries))})"
+        df = pd.read_sql_query(query, conn, params=selected_countries or None)
+        return px.bar(df, x='Country', y='CustomerCount', title='Customer Count by Country')
+
+def update_line_chart(selected_countries):
+    with sqlite3.connect(db_filepath) as conn:
+       query = "SELECT SubscriptionDate, COUNT(*) AS SubscriptionCount FROM customers"
+       if selected_countries:
+          query += f" WHERE Country IN ({', '.join(['?'] * len(selected_countries))})"
+       query+= " GROUP BY SubscriptionDate"
+
+
+       df = pd.read_sql_query(query, conn, params=selected_countries or None)
+       df['SubscriptionDate'] = pd.to_datetime(df['SubscriptionDate'], errors='coerce') # Handle parsing errors
+       return px.line(df, x='SubscriptionDate', y='SubscriptionCount', title='Subscription Count Over Time')
+
+
+def update_pie_chart(selected_countries):
+    with sqlite3.connect(db_filepath) as conn:
+       query = "SELECT City, COUNT(*) AS CustomerCount FROM customers"
+       if selected_countries:
+          query +=  f" WHERE Country IN ({', '.join(['?']*len(selected_countries))})"
+       query += " GROUP BY City"
+       df = pd.read_sql_query(query, conn, params=selected_countries or None)
+       return px.pie(df, values='CustomerCount', names='City', title='Customer Distribution by City')
+
+
 if __name__ == '__main__':
-    app.run_server(debug=DEBUG_MODE)  # Use environment variable for debug mode
+    app.run_server(debug=True)
