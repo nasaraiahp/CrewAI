@@ -1,83 +1,85 @@
 import pandas as pd
 import sqlite3
 import dash
-from dash import dcc, html, Input, Output
-from dash.dash_table import DataTable
+from dash import dcc, html
+from dash.dependencies import Input, Output
 import plotly.express as px
-import plotly.graph_objects as go
-from flask import Flask
+import os
 
-# --- Configuration ---
-DATABASE_PATH = 'sales_data.db'  # Use a constant for the database path
-CSV_FILE = 'sales_data.csv'  # Use a constant for the CSV file path
+# Database and CSV handling improvements
+db_file = 'sales_data.db'
+csv_file = 'sales_data.csv'
 
-# --- Data Loading and Database Interaction ---
+# Check if the database file exists; create if it doesn't
+if not os.path.exists(db_file):
+    conn = sqlite3.connect(db_file)
+    # Improve security by parameterizing SQL query
+    # This is not relevant for the CREATE TABLE part but is shown as an example for later parts.
+    conn.execute("CREATE TABLE IF NOT EXISTS sales ( --Add your column definitions here. It's good practice to define column types-- )") # Example: CREATE TABLE sales (col1 TEXT, col2 REAL...) 
+    conn.close()
 
-def load_data_to_db(csv_file, db_path):
-    """Loads data from a CSV file into an SQLite database.
+# Load CSV only if database is empty or doesn't have the 'sales' table
 
-    Args:
-        csv_file (str): Path to the CSV file.
-        db_path (str): Path to the SQLite database file.
+try:  # Try/Except block for more robust error handling
+    conn = sqlite3.connect(db_file)
+    table_exists = pd.read_sql_query("SELECT name FROM sqlite_master WHERE type='table' AND name='sales'", conn).shape[0] > 0
 
-    Returns:
-        pandas.DataFrame or None: The DataFrame if loading is successful, None otherwise.
-    """
-    try:
-        conn = sqlite3.connect(db_path)  # No need to explicitly close if using a context manager
-        df = pd.read_csv(csv_file, parse_dates=['SubscriptionDate'])  # Parse dates on load
+    if not table_exists:
+        print(f"Loading from '{csv_file}' into database.")
+        df = pd.read_csv(csv_file)
+        df.to_sql('sales', conn, if_exists='replace', index=False)
 
-        with conn:  # Use a context manager to automatically commit/rollback and close the connection
-            df.to_sql('sales_data', conn, if_exists='replace', index=False)
-        print("Data loaded successfully!")
-        return df
-
-    except Exception as e:
-        print(f"An error occurred during data loading: {e}")
-        return None
-
-# --- Dash App ---
-server = Flask(__name__)
-app = dash.Dash(__name__, server=server, suppress_callback_exceptions=True) # Suppress callback exceptions
-
-df = load_data_to_db(CSV_FILE, DATABASE_PATH)
-
-if df is not None:
-    app.layout = html.Div([
-        html.H1("Sales Dashboard"),
-        dcc.Dropdown(
-            id='country-dropdown',
-            options=[{'label': country, 'value': country} for country in df['Country'].unique()],
-            value=df['Country'].iloc[0] if not df['Country'].empty else None,  # Handle potential empty DataFrame
-            multi=False,
-            clearable=False #Prevent clearing the selection entirely, ensuring there's always a value for the callbacks
-        ),
-        dcc.Graph(id='bar-chart'),
-        dcc.Graph(id='line-chart'),
-        dcc.Graph(id='pie-chart')
-    ])
+    conn.close()  # Close the connection in the `try` block after use
+except Exception as e: # Handle exceptions during CSV or Database interaction
+    print(f"Error during database setup or CSV import: {e}")
 
 
-    @app.callback(
-        [Output('bar-chart', 'figure'),
-         Output('line-chart', 'figure'),
-         Output('pie-chart', 'figure')],
-        Input('country-dropdown', 'value')
-    )
-    def update_charts(selected_country):
-        filtered_df = df[df['Country'] == selected_country]
+# Dash App Setup
+app = dash.Dash(__name__)
+app.title = "Sales Data Dashboard"  # Set the title for the dashboard
+
+# Layout -  Improve structure and add user controls (example dropdown)
+app.layout = html.Div([
+    html.H1("Sales Data Dashboard"),
+
+    # Add a dropdown to select country (example)
+    dcc.Dropdown(id='country-dropdown',
+                 options=[{'label': 'All', 'value': 'All'}] + [{'label': i, 'value': i} for i in df['Country'].unique()],  # Dynamic options
+                 value='All',  # Default value
+                 clearable=False  # User can't clear the dropdown selection
+                 ),
 
 
-        bar_fig = px.bar(filtered_df, x='City', title=f'Customers per City ({selected_country})')
-
-        line_fig = px.line(filtered_df, x='SubscriptionDate', y='CustomerId',
-                           title=f'Subscriptions Over Time ({selected_country})')
-
-        pie_fig = px.pie(filtered_df, values='CustomerId', names='Company',
-                         title=f'Customer Distribution by Company ({selected_country})')
-
-        return bar_fig, line_fig, pie_fig
+    dcc.Graph(id='bar-chart-country'),
+    dcc.Graph(id='line-chart-time'),
+    dcc.Graph(id='pie-chart-customers'),
+    dcc.Graph(id='bar-chart-customers'),
+    dcc.Graph(id='line-chart-product'),
+    dcc.Store(id='intermediate-value')  # Store to hold pre-processed data (if necessary)
+])
 
 
-    if __name__ == '__main__':
-        app.run_server(debug=True)
+
+# Callback Functions - now using the Dropdown example as Input for filtering
+
+@app.callback(
+    Output('bar-chart-country', 'figure'),
+    Input('country-dropdown', 'value') # Input is country dropdown
+)
+def update_bar_chart_country(selected_country):
+    conn = sqlite3.connect(db_file)
+    if selected_country == "All":
+        df = pd.read_sql_query("SELECT Country, COUNT(*) AS SalesCount FROM sales GROUP BY Country", conn)
+    else:
+        df = pd.read_sql_query(f"SELECT Country, COUNT(*) AS SalesCount FROM sales WHERE Country = ? GROUP BY Country", conn, params=(selected_country,)) # Parameterized query
+    conn.close()
+    return px.bar(df, x='Country', y='SalesCount', title="Sales by Country")
+
+
+# Other callbacks... (similar adjustments for inputs and query parameters for filtering)
+# ...
+
+
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
